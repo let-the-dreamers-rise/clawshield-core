@@ -137,7 +137,9 @@ export function toActionRequest(transfer: SolanaTransfer, agentId: string): Acti
     amount: transfer.amount,
     asset: transfer.mint ?? NATIVE_SOL_MINT,
     requestedAt: transfer.requestedAt,
-    params,
+    // SolanaActionParams is a closed shape; ActionRequest.params is an open record. The cast
+    // is the one place the two meet, and readSolanaParams re-validates on the way back out.
+    params: params as unknown as Readonly<Record<string, unknown>>,
   };
 }
 

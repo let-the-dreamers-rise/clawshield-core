@@ -161,7 +161,7 @@ export function createSealedPolicyProvider(config: SealedProviderConfig): Policy
       output.verdict,
       output.ruleIds,
     );
-    if (!verifyAttestation(payload, output.attestation, config.clusterPublicKey)) {
+    if (!verifyAttestation(payload as unknown as Canonicalisable, output.attestation, config.clusterPublicKey)) {
       throw new SealedPolicyError(
         "bad_attestation",
         "The MXE attestation does not verify under the pinned cluster key",

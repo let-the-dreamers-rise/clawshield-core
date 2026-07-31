@@ -15,6 +15,7 @@
  */
 
 import type { ActionRequest, AgentState, Decision } from "../policy/types.ts";
+import type { MxeAttestation } from "../mxe/types.ts";
 
 export interface ExecutionOutcome {
   readonly executed: boolean;
@@ -36,6 +37,20 @@ export interface ReceiptBody {
   /** Optional model reasoning. Recorded for accountability, never trusted for enforcement. */
   readonly modelReasoning?: string;
   readonly outcome?: ExecutionOutcome;
+  /**
+   * Version of the rule set that produced this decision.
+   *
+   * Optional, and canonicalise() drops undefined keys, so adding it did not change the hash of
+   * any receipt issued before it existed. Replay is only meaningful against the same rules:
+   * with this bound, a verifier running a different rule set can say "I cannot replay this"
+   * instead of the far more damaging "this receipt is forged".
+   */
+  readonly rulesetVersion?: number;
+  /**
+   * Present only for decisions taken under seal. The verifier cannot replay a policy it is not
+   * allowed to see, so it checks this instead. See src/policy/sealed.ts.
+   */
+  readonly attestation?: MxeAttestation;
   /** Hash of the previous receipt for this agent, forming a tamper-evident chain. */
   readonly previousReceiptHash: string | null;
 }

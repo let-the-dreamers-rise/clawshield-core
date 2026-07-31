@@ -21,19 +21,26 @@ import { isSolanaRequest, mintOf, readSolanaParams } from "./types.ts";
 const deny = (rule: string, reason: string): RuleResult => ({ rule, verdict: "deny", reason });
 
 /**
+ * Every rule takes the full (policy, request, state) triple even where it ignores state, so
+ * the whole set is uniformly assignable to the engine's Rule type and can be iterated over in
+ * tests without special-casing arities.
+ */
+type SolanaRule = (p: Policy, r: ActionRequest, s: AgentState) => RuleResult | null;
+
+/**
  * A request claiming to be Solana whose params do not parse is denied outright.
  *
  * Without this, forging `{ chain: "solana" }` with a broken body would make readSolanaParams
  * return null in every other rule, each of which would then decline to fire, and the request
  * would fall through the Solana rule set entirely.
  */
-export function checkSolanaParams(_p: Policy, r: ActionRequest): RuleResult | null {
+export const checkSolanaParams: SolanaRule = (_p, r) => {
   if (!isSolanaRequest(r)) return null;
   if (readSolanaParams(r) !== null) return null;
   return deny("solana_params_malformed", "Request declares chain solana but its parameters do not parse");
-}
+};
 
-export function checkClusterAllowed(p: Policy, r: ActionRequest): RuleResult | null {
+export const checkClusterAllowed: SolanaRule = (p, r) => {
   const params = readSolanaParams(r);
   if (params === null) return null;
   // Absent means deny. A devnet policy must never be readable as mainnet authorisation.
@@ -42,9 +49,9 @@ export function checkClusterAllowed(p: Policy, r: ActionRequest): RuleResult | n
   }
   if (p.allowedClusters.includes(params.cluster)) return null;
   return deny("cluster_not_allowed", `Cluster ${params.cluster} is not allowlisted`);
-}
+};
 
-export function checkProgramAllowed(p: Policy, r: ActionRequest): RuleResult | null {
+export const checkProgramAllowed: SolanaRule = (p, r) => {
   const params = readSolanaParams(r);
   if (params === null) return null;
   if (!p.allowedPrograms) {
@@ -52,9 +59,9 @@ export function checkProgramAllowed(p: Policy, r: ActionRequest): RuleResult | n
   }
   if (p.allowedPrograms.includes(params.programId)) return null;
   return deny("program_not_allowed", `Program ${params.programId} is not allowlisted`);
-}
+};
 
-export function checkMintAllowed(p: Policy, r: ActionRequest): RuleResult | null {
+export const checkMintAllowed: SolanaRule = (p, r) => {
   if (readSolanaParams(r) === null) return null;
   if (!p.allowedMints) {
     return deny("mint_not_allowed", "Policy names no permitted Solana mints");
@@ -62,7 +69,7 @@ export function checkMintAllowed(p: Policy, r: ActionRequest): RuleResult | null
   const mint = mintOf(r);
   if (p.allowedMints.includes(mint)) return null;
   return deny("mint_not_allowed", `Mint ${mint} is not allowlisted`);
-}
+};
 
 /**
  * Per-mint spend cap.
@@ -72,7 +79,7 @@ export function checkMintAllowed(p: Policy, r: ActionRequest): RuleResult | null
  * most likely operator mistake here, and the failure mode has to be a refusal, not an
  * uncapped transfer.
  */
-export function checkMintSpendCap(p: Policy, r: ActionRequest): RuleResult | null {
+export const checkMintSpendCap: SolanaRule = (p, r) => {
   if (readSolanaParams(r) === null) return null;
   if (p.maxAmountPerMint === undefined || r.amount === undefined) return null;
 
@@ -83,7 +90,7 @@ export function checkMintSpendCap(p: Policy, r: ActionRequest): RuleResult | nul
   }
   if (r.amount <= cap) return null;
   return deny("mint_cap_exceeded", `Amount ${r.amount} exceeds the cap for ${mint}`);
-}
+};
 
 /**
  * The amount must be strictly positive.
@@ -93,11 +100,11 @@ export function checkMintSpendCap(p: Policy, r: ActionRequest): RuleResult | nul
  * the agent's remaining headroom. A zero-amount transfer is rejected too: it burns a rate-limit
  * slot and produces a receipt asserting a movement of nothing.
  */
-export function checkTransferAmount(_p: Policy, r: ActionRequest): RuleResult | null {
+export const checkTransferAmount: SolanaRule = (_p, r) => {
   if (readSolanaParams(r) === null) return null;
   if (r.amount === undefined) {
     return deny("amount_not_positive", "A Solana transfer must carry an amount");
   }
   if (r.amount > 0n) return null;
   return deny("amount_not_positive", `Amount ${r.amount} is not strictly positive`);
-}
+};
