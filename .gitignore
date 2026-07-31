@@ -3,3 +3,6 @@ dist/
 *.log
 .env
 .env.*
+
+# Full session transcripts. Working artefacts, not source history.
+claude-session.jsonl
