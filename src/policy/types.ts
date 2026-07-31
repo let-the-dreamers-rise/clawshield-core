@@ -46,6 +46,25 @@ export interface Policy {
   /** Minutes past midnight UTC, inclusive start, exclusive end. */
   readonly allowedHoursUtc?: readonly [number, number];
   readonly allowedDaysUtc?: readonly number[];
+
+  /*
+   * Solana-specific constraints.
+   *
+   * These are optional, and canonicalise() drops undefined-valued keys, so a policy that does
+   * not set them hashes byte-identically to how it hashed before these fields existed. Every
+   * receipt already issued stays verifiable. That property is why these live here rather than
+   * in a separate SolanaPolicy type that would have had to be hashed alongside.
+   *
+   * Unlike counterpartyAllowlist above, absent means DENY for all of these. See the note at
+   * the top of src/solana/rules.ts.
+   */
+
+  /** Cluster names, for example "mainnet-beta". Kept as strings so this type stays chain-agnostic. */
+  readonly allowedClusters?: readonly string[];
+  readonly allowedPrograms?: readonly string[];
+  readonly allowedMints?: readonly string[];
+  /** Per-mint spend cap in that mint's minor units. A mint absent from the table is denied. */
+  readonly maxAmountPerMint?: Readonly<Record<string, bigint>>;
 }
 
 export interface RuleResult {

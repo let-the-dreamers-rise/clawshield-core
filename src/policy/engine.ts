@@ -21,17 +21,49 @@ import {
   checkToolAllowed,
   checkWindowSpend,
 } from "./rules.ts";
+import {
+  checkClusterAllowed,
+  checkMintAllowed,
+  checkMintSpendCap,
+  checkProgramAllowed,
+  checkSolanaParams,
+  checkTransferAmount,
+} from "../solana/rules.ts";
 
 type Rule = (p: Policy, r: ActionRequest, s: AgentState) => RuleResult | null;
 
-/** Denying rules run first, in order of severity. Escalation runs only if none denied. */
+/**
+ * Version of this rule set.
+ *
+ * A receipt records which ruleset produced it, because replay is only meaningful against the
+ * same rules. Adding a rule cannot change the verdict for a policy that does not configure it
+ * - every rule above returns null when its policy fields are absent - but it can change the
+ * recorded list of firing rules, and verifyReceipt compares that list exactly. Binding the
+ * version lets a verifier say "I cannot replay this" instead of "this receipt is forged".
+ */
+export const RULESET_VERSION = 1;
+
+/**
+ * Denying rules run first, in order of severity. Escalation runs only if none denied.
+ *
+ * The Solana rules sit with the other allowlists rather than at the end: they answer "may this
+ * agent touch this program and mint at all", which is a more fundamental question than "is
+ * this amount too large". The per-mint cap sits with the other numeric caps for the same
+ * reason. Order is part of the recorded output, so it is part of the wire format.
+ */
 const DENY_RULES: readonly Rule[] = [
   checkRevoked,
   checkToolAllowed,
+  checkSolanaParams,
   checkCounterparty,
+  checkClusterAllowed,
+  checkProgramAllowed,
+  checkMintAllowed,
+  checkTransferAmount,
   checkDrawdown,
   checkRateLimit,
   checkAmountPerAction,
+  checkMintSpendCap,
   checkWindowSpend,
   checkTimeWindow,
 ];
