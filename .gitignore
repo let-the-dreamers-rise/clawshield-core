@@ -1,5 +1,8 @@
 ﻿node_modules/
 dist/
+demo-out/
+*.keypair.json
+sealed-secret*.json
 *.log
 .env
 .env.*

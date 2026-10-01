@@ -39,6 +39,16 @@ export function keypairFromSeed(seed: Uint8Array): Keypair {
   return { privateKey, publicKey: createPublicKey(privateKey) };
 }
 
+/**
+ * The 64-byte solana-keygen form of a keypair: seed then public key. Secret material - callers
+ * write it to a file with restrictive permissions and never log it.
+ */
+export function solanaSecretKey(keys: Keypair): Uint8Array {
+  const jwk = keys.privateKey.export({ format: "jwk" });
+  if (typeof jwk.d !== "string") throw new TypeError("Expected an Ed25519 private key");
+  return Uint8Array.from([...Buffer.from(jwk.d, "base64url"), ...publicKeyBytes(keys.publicKey)]);
+}
+
 /** Load the 64-byte secret key format used by solana-keygen. */
 export function keypairFromSolanaSecretKey(secret: Uint8Array): Keypair {
   if (secret.length !== 64) {

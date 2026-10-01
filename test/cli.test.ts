@@ -34,7 +34,10 @@ test("the offline demo produces allow, deny and escalate receipts in both modes"
   // The sealed directory is what a desk would publish. The policy must not be in it.
   assert.equal(existsSync(join(dir, "sealed/policy.json")), false);
   const sealedText = readFileSync(join(dir, "sealed/receipts.json"), "utf8");
-  assert.doesNotMatch(sealedText, /exceeds|threshold|cap \d/);
+  // Rule ids are disclosed in rules mode by design; the thresholds and reason text are not.
+  // The demo policy's limits are 50000000 (mint cap), 100000000 (window), 20000000 (escalation).
+  assert.doesNotMatch(sealedText, /"(50000000|100000000|20000000)"/);
+  assert.doesNotMatch(sealedText, /Projected window spend|exceeds the cap|escalation threshold/);
 });
 
 test("a stranger verifies the published chains from files alone", () => {

@@ -7,7 +7,11 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "test": "node --test --experimental-strip-types \"test/*.test.ts\"",
-    "typecheck": "tsc --noEmit"
+    "test:coverage": "node --test --experimental-strip-types --experimental-test-coverage --test-coverage-include=\"src/**\" --test-coverage-lines=80 \"test/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "genkai": "node --experimental-strip-types --no-warnings src/cli/main.ts",
+    "demo": "node --experimental-strip-types --no-warnings src/cli/main.ts demo",
+    "serve": "node --experimental-strip-types --no-warnings src/cli/main.ts serve"
   },
   "keywords": ["ai-agents", "policy", "governance", "audit", "ed25519", "agentic-payments"],
   "devDependencies": {
