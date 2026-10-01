@@ -47,8 +47,17 @@ export interface MxeEvaluationInput {
  * nobody. A sealed verifier cannot re-run anything, because it does not have the policy, so
  * it checks a signature from the cluster instead. That substitution is the central trade of
  * the whole design and it is stated here rather than buried.
+ *
+ * Two forms exist. A signed attestation carries an Ed25519 signature a verifier checks offline.
+ * An on-chain attestation is a pointer: the cluster's signature was checked by the Arcium
+ * program before GENKAI's callback could write the DecisionRecord, so the record itself is the
+ * evidence, and a verifier reads it over RPC.
  */
-export interface MxeAttestation {
+export type MxeAttestation = SignedAttestation | OnChainAttestation;
+
+export interface SignedAttestation {
+  /** Absent on attestations issued before the on-chain form existed, so they still parse. */
+  readonly kind?: "signed";
   readonly circuitId: string;
   /** SPKI DER public key of the MPC cluster, base64. */
   readonly clusterPublicKey: string;
@@ -56,6 +65,26 @@ export interface MxeAttestation {
   readonly signature: string;
   /** Present only in verdict-only mode; absent means rules mode, so older attestations verify. */
   readonly disclosure?: "verdict";
+}
+
+/** Where the cluster's answer was recorded. Every address is checked against pinned values. */
+export interface OnChainAttestation {
+  readonly kind: "onchain";
+  readonly circuitId: string;
+  /** The GENKAI program that owns the records. */
+  readonly programId: string;
+  /** The PolicyRecord holding the encrypted policy that was evaluated. */
+  readonly policy: string;
+  /** The DecisionRecord the callback wrote. */
+  readonly decision: string;
+  readonly computationOffset: bigint;
+  /** The transaction that queued the computation, for an auditor following the trail. */
+  readonly queueSignature: string;
+  readonly disclosure?: "verdict";
+}
+
+export function isOnChainAttestation(a: MxeAttestation): a is OnChainAttestation {
+  return a.kind === "onchain";
 }
 
 export interface MxeEvaluationOutput {
@@ -76,7 +105,8 @@ export interface MxeEvaluationOutput {
 
 export interface MxeClient {
   readonly circuitId: string;
-  readonly clusterPublicKey: string;
+  /** Only for clients that sign attestations offline; the on-chain client has no such key. */
+  readonly clusterPublicKey?: string;
   evaluate(input: MxeEvaluationInput): Promise<MxeEvaluationOutput>;
 }
 

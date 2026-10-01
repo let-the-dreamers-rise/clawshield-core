@@ -17,12 +17,15 @@ import { decodePubkey, encodeBase58 } from "../solana/base58.ts";
 import { findProgramAddress } from "../solana/pda.ts";
 import type { RpcClient } from "../solana/rpc.ts";
 import type { SignedReceipt } from "../receipt/types.ts";
+import type { ActionRequest, AgentState, Verdict } from "../policy/types.ts";
 import { encodeRequest, type EncodedRequest } from "./encoding.ts";
 import { ruleIdsOf, VERDICT_CODE } from "./circuit.ts";
+import type { Disclosure } from "./types.ts";
 
 /** 5 x u128, 4 x u64, 1 x u16, 1 x u8, 6 x bool. */
 export const REQUEST_FIELDS_SIZE = 121;
-export const DECISION_RECORD_SIZE = 8 + 32 + 8 + REQUEST_FIELDS_SIZE + 1 + 1 + 4 + 8 + 8 + 1;
+/** discriminator, policy, offset, request, status, verdict, mask, two slots, bump, disclose_rules. */
+export const DECISION_RECORD_SIZE = 8 + 32 + 8 + REQUEST_FIELDS_SIZE + 1 + 1 + 4 + 8 + 8 + 1 + 1;
 const POLICY_FIELDS = 87;
 export const POLICY_RECORD_SIZE = 8 + 32 + 32 + 32 + 32 + 16 + 3 + 5 + POLICY_FIELDS * 32;
 
@@ -81,6 +84,41 @@ export function encodeRequestFields(r: EncodedRequest): Uint8Array {
   return new Uint8Array(out);
 }
 
+/**
+ * The inverse of encodeRequestFields: what the cluster was asked to evaluate, as recorded on
+ * chain. Lets an auditor read a DecisionRecord without the receipt that produced it.
+ */
+export function decodeRequestFields(bytes: Uint8Array): EncodedRequest {
+  if (bytes.length !== REQUEST_FIELDS_SIZE) throw new RangeError(`RequestFields is ${REQUEST_FIELDS_SIZE} bytes, got ${bytes.length}`);
+  const b = Buffer.from(bytes);
+  let o = 0;
+  const n = (size: number): bigint => {
+    const v = readLe(b, o, size);
+    o += size;
+    return v;
+  };
+  const f = (): boolean => b[o++] === 1;
+  return {
+    toolId: n(16),
+    hasCounterparty: f(),
+    counterpartyId: n(16),
+    hasAmount: f(),
+    amountNegative: f(),
+    amountMagnitude: n(8),
+    isSolana: f(),
+    solanaValid: f(),
+    clusterId: n(16),
+    programId: n(16),
+    mintId: n(16),
+    minuteOfDay: Number(n(2)),
+    dayOfWeek: Number(n(1)),
+    revoked: f(),
+    spentInWindow: n(8),
+    callsInWindow: n(8),
+    drawdownFromPeak: n(8),
+  };
+}
+
 export interface DecisionRecordView {
   readonly policy: string;
   readonly computationOffset: bigint;
@@ -90,6 +128,8 @@ export interface DecisionRecordView {
   readonly mask: number;
   readonly requestedSlot: bigint;
   readonly decidedSlot: bigint;
+  /** false: the circuit was asked for the verdict alone and revealed a zero mask. */
+  readonly discloseRules: boolean;
 }
 
 export function decodeDecisionRecord(data: Uint8Array): DecisionRecordView {
@@ -105,7 +145,8 @@ export function decodeDecisionRecord(data: Uint8Array): DecisionRecordView {
   o += 4;
   const requestedSlot = readLe(b, o, 8);
   const decidedSlot = readLe(b, o + 8, 8);
-  return { policy, computationOffset, requestFields, status, verdict, mask, requestedSlot, decidedSlot };
+  const discloseRules = b[o + 17] === 1;
+  return { policy, computationOffset, requestFields, status, verdict, mask, requestedSlot, decidedSlot, discloseRules };
 }
 
 export interface PolicyRecordView {
@@ -144,7 +185,10 @@ export type OnChainFailure =
   | "not_decided"
   | "commitment_mismatch"
   | "request_mismatch"
-  | "verdict_mismatch";
+  | "verdict_mismatch"
+  | "policy_mismatch"
+  | "computation_mismatch"
+  | "disclosure_mismatch";
 
 export interface OnChainCheck {
   readonly valid: boolean;
@@ -158,6 +202,36 @@ export interface OnChainCheckOptions {
   /** The GENKAI program id, pinned by the verifier, never read from the receipt. */
   readonly programId: string;
   readonly decision: string;
+  /**
+   * The PolicyRecord the decision must have been made against. Pin it whenever possible: the
+   * commitment is public, so anyone can register a PolicyRecord carrying the same commitment
+   * over a permissive policy, and only the record's address tells the two apart.
+   */
+  readonly policy?: string;
+  /** The computation the decision must belong to, when the caller knows it. */
+  readonly computationOffset?: bigint;
+}
+
+/** What a receipt (or an MXE answer) claims the cluster decided. */
+export interface DecisionClaim {
+  readonly commitment: string;
+  readonly request: ActionRequest;
+  readonly state: AgentState;
+  readonly verdict: Verdict;
+  readonly ruleIds: readonly string[];
+  readonly disclosure: Disclosure;
+}
+
+export function claimOfReceipt(receipt: SignedReceipt): DecisionClaim {
+  const body = receipt.body;
+  return {
+    commitment: body.policyHash,
+    request: body.request,
+    state: body.state,
+    verdict: body.decision.verdict,
+    ruleIds: body.decision.reasons.map((r) => r.rule),
+    disclosure: body.attestation?.disclosure === "verdict" ? "verdict" : "rules",
+  };
 }
 
 async function load(rpc: RpcClient, address: string, programId: string) {
@@ -171,7 +245,23 @@ async function load(rpc: RpcClient, address: string, programId: string) {
  * Confirm a sealed receipt against the decision the cluster recorded on chain. Pair with
  * verifySealedReceipt, which checks the operator's signature, chain and bound transaction.
  */
-export async function verifyOnChainDecision(receipt: SignedReceipt, options: OnChainCheckOptions): Promise<OnChainCheck> {
+export function verifyOnChainDecision(receipt: SignedReceipt, options: OnChainCheckOptions): Promise<OnChainCheck> {
+  return checkOnChainDecision(claimOfReceipt(receipt), options);
+}
+
+function disclosureFinding(claim: DecisionClaim, decision: DecisionRecordView): [OnChainFailure, string] | null {
+  const verdictOnly = claim.disclosure === "verdict";
+  if (verdictOnly === decision.discloseRules) {
+    return ["disclosure_mismatch", `The cluster was asked to ${decision.discloseRules ? "disclose" : "withhold"} rules; the claim is ${claim.disclosure} mode`];
+  }
+  if (verdictOnly && (decision.mask !== 0 || claim.ruleIds.length > 0)) {
+    return ["disclosure_mismatch", "A verdict-only decision carries rule identifiers"];
+  }
+  return null;
+}
+
+/** The same check as verifyOnChainDecision, for a claim that is not yet a signed receipt. */
+export async function checkOnChainDecision(claim: DecisionClaim, options: OnChainCheckOptions): Promise<OnChainCheck> {
   const fail = (failure: OnChainFailure, detail: string): OnChainCheck => ({ valid: false, failures: [failure], detail: [detail] });
 
   const decisionAccount = await load(options.rpc, options.decision, options.programId);
@@ -194,14 +284,19 @@ export async function verifyOnChainDecision(receipt: SignedReceipt, options: OnC
   }
 
   const findings: [OnChainFailure, string][] = [];
-  const body = receipt.body;
-  if (policy.commitment !== body.policyHash) {
-    findings.push(["commitment_mismatch", `On-chain policy commits to ${policy.commitment}; the receipt binds ${body.policyHash}`]);
+  if (options.policy !== undefined && decision.policy !== options.policy) {
+    findings.push(["policy_mismatch", `Decided against policy record ${decision.policy}, pinned ${options.policy}`]);
+  }
+  if (options.computationOffset !== undefined && decision.computationOffset !== options.computationOffset) {
+    findings.push(["computation_mismatch", `Record belongs to computation ${decision.computationOffset}, expected ${options.computationOffset}`]);
+  }
+  if (policy.commitment !== claim.commitment) {
+    findings.push(["commitment_mismatch", `On-chain policy commits to ${policy.commitment}; the receipt binds ${claim.commitment}`]);
   }
 
   let expectedFields: Uint8Array | undefined;
   try {
-    expectedFields = encodeRequestFields(encodeRequest(body.request, body.state));
+    expectedFields = encodeRequestFields(encodeRequest(claim.request, claim.state));
   } catch (err) {
     findings.push(["request_mismatch", `The receipt's request cannot be encoded: ${(err as Error).message}`]);
   }
@@ -209,13 +304,16 @@ export async function verifyOnChainDecision(receipt: SignedReceipt, options: OnC
     findings.push(["request_mismatch", "The cluster evaluated different request fields than the receipt records"]);
   }
 
-  const verdictCode = VERDICT_CODE[body.decision.verdict];
-  const onChainRules = ruleIdsOf({ verdict: decision.verdict as 0 | 1 | 2, mask: decision.mask });
-  const receiptRules = body.decision.reasons.map((r) => r.rule);
-  // Verdict-only receipts carry no rule ids; there is nothing to compare beyond the verdict.
-  const rulesAgree = receiptRules.length === 0 || receiptRules.join(",") === onChainRules.join(",");
+  const disclosure = disclosureFinding(claim, decision);
+  if (disclosure) findings.push(disclosure);
+
+  const verdictCode = VERDICT_CODE[claim.verdict];
+  // Under verdict-only disclosure the mask is zero by construction and only the verdict is
+  // compared; disclosureFinding has already required the claim to carry no rule ids.
+  const onChainRules = decision.discloseRules ? ruleIdsOf({ verdict: decision.verdict as 0 | 1 | 2, mask: decision.mask }) : [];
+  const rulesAgree = !decision.discloseRules || claim.ruleIds.join(",") === onChainRules.join(",");
   if (decision.verdict !== verdictCode || !rulesAgree) {
-    findings.push(["verdict_mismatch", `On chain: verdict ${decision.verdict} [${onChainRules.join(", ")}]; receipt: ${body.decision.verdict} [${receiptRules.join(", ")}]`]);
+    findings.push(["verdict_mismatch", `On chain: verdict ${decision.verdict} [${onChainRules.join(", ")}]; claimed: ${claim.verdict} [${claim.ruleIds.join(", ")}]`]);
   }
 
   return {

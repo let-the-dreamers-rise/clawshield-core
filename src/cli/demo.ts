@@ -11,17 +11,22 @@
  * never broadcast, so nothing can land. With --devnet the plaintext run broadcasts for real
  * and each confirmed transfer is then checked against the chain.
  *
- * The sealed run uses the in-process stub MXE, which runs the same circuit model the Arcium
- * circuit implements but is not confidential. It is labelled as such in the output.
+ * By default the sealed run uses the in-process stub MXE, which runs the same circuit model the
+ * Arcium circuit implements but is not confidential, and is labelled as such in the output.
+ * With --live it runs against a deployed GENKAI program instead: every sealed decision is made
+ * by the Arcium cluster on the encrypted PolicyRecord, and each receipt is verified against
+ * the DecisionRecord the cluster's callback wrote.
  */
 
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { generateKeypair, hashReceiptBody, type Keypair } from "../receipt/sign.ts";
 import { verifyChain } from "../receipt/verify.ts";
-import { verifySealedChain } from "../receipt/verify-sealed.ts";
+import { verifySealedChain, verifySealedChainOnChain, type SealedTrust } from "../receipt/verify-sealed.ts";
 import { createPlaintextPolicyProvider, createSealedPolicyProvider, sealedCommitment, type PolicyProvider } from "../policy/sealed.ts";
 import { createStubMxe } from "../mxe/stub.ts";
+import { createArciumMxeClient } from "../mxe/arcium.ts";
+import { trustOf, type Deployment } from "./deployment.ts";
 import { createSolanaAdapter } from "../solana/adapter.ts";
 import { createExecutor, verifyExecution } from "../solana/executor.ts";
 import { solanaAddress } from "../solana/keys.ts";
@@ -36,7 +41,7 @@ const VENDOR_B = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM";
 const STRANGER = "GsbwXfJraMomNxBcjYLcG3mxkBUiyWXAB32fGbSMQRdW";
 /** Never a real recent blockhash, so an offline transaction can never land. */
 const OFFLINE_BLOCKHASH = "EkSnNWid2cvwEVnVx9aBqawnmiCNiDgp3gUdkDPTKN1N";
-const CIRCUIT_ID = "genkai.policy.v1";
+const CIRCUIT_ID = "genkai.policy.v2";
 
 export const DEMO_POLICY: Policy = {
   policyId: "desk-alpha-treasury",
@@ -64,7 +69,64 @@ export interface DemoOptions {
   readonly out: string;
   readonly vault?: Keypair;
   readonly rpc?: RpcClient;
+  /** Seal against a deployed program rather than the stub. */
+  readonly live?: LiveOptions;
   readonly log?: (line: string) => void;
+}
+
+export interface LiveOptions {
+  readonly deployment: Deployment;
+  readonly rpc: RpcClient;
+  /** The policy authority: evaluation is authority-only on chain. */
+  readonly authority: Keypair;
+}
+
+interface SealedSetup {
+  readonly provider: PolicyProvider;
+  readonly trust: SealedTrust;
+  readonly verify: (receipts: readonly SignedReceipt[]) => Promise<{ readonly valid: boolean; readonly detail: readonly string[] }>;
+  readonly label: string;
+}
+
+function stubSealed(): SealedSetup {
+  const salt = randomBytes(32).toString("hex");
+  const mxe = createStubMxe({ policy: DEMO_POLICY, salt, circuitId: CIRCUIT_ID, keys: generateKeypair() });
+  const commitment = sealedCommitment(DEMO_POLICY, salt);
+  const trust = { commitment, circuitId: CIRCUIT_ID, clusterPublicKey: mxe.clusterPublicKey };
+  return {
+    provider: createSealedPolicyProvider({ commitment, circuitId: CIRCUIT_ID, clusterPublicKey: mxe.clusterPublicKey, mxe }),
+    trust,
+    verify: async (receipts) => verifySealedChain(receipts, trust),
+    label: "attested under the pinned cluster key; the policy was never published",
+  };
+}
+
+function liveSealed(live: LiveOptions, log: (l: string) => void): SealedSetup {
+  const d = live.deployment;
+  const trust = trustOf(d);
+  const mxe = createArciumMxeClient({
+    rpc: live.rpc,
+    programId: d.programId,
+    clusterOffset: d.clusterOffset,
+    policy: d.policy,
+    authority: live.authority,
+    circuitId: d.circuitId,
+  });
+  const logged = {
+    circuitId: mxe.circuitId,
+    evaluate: async (input: Parameters<typeof mxe.evaluate>[0]) => {
+      const out = await mxe.evaluate(input);
+      const where = out.attestation.kind === "onchain" ? out.attestation.decision : "";
+      log(`  cluster decided ${out.verdict.padEnd(8)} -> ${where}`);
+      return out;
+    },
+  };
+  return {
+    provider: createSealedPolicyProvider({ commitment: d.commitment, circuitId: d.circuitId, mxe: logged, onChain: { rpc: live.rpc, programId: d.programId, policy: d.policy } }),
+    trust,
+    verify: (receipts) => verifySealedChainOnChain(receipts, trust, live.rpc),
+    label: `decided by Arcium cluster ${d.clusterOffset} on ${d.cluster}; each receipt checked against its on-chain DecisionRecord`,
+  };
 }
 
 interface Step {
@@ -139,12 +201,11 @@ export async function runDemo(options: DemoOptions): Promise<{ readonly plaintex
     ? await runDevnet(plainProvider, vault, options.rpc, log)
     : await runOffline(plainProvider, vault, "desk-bot");
 
-  // Sealed: only the commitment, circuit id and cluster key are published.
-  const salt = randomBytes(32).toString("hex");
-  const mxe = createStubMxe({ policy: DEMO_POLICY, salt, circuitId: CIRCUIT_ID, keys: generateKeypair() });
-  const sealedProvider = createSealedPolicyProvider({ commitment: sealedCommitment(DEMO_POLICY, salt), circuitId: CIRCUIT_ID, clusterPublicKey: mxe.clusterPublicKey, mxe });
-  const trust = { commitment: sealedProvider.commitment, circuitId: CIRCUIT_ID, clusterPublicKey: mxe.clusterPublicKey };
-  const sealed = await runOffline(sealedProvider, vault, "desk-bot-sealed");
+  // Sealed: only the trust anchor is published - never the policy.
+  if (options.live) log(`Sealing against ${options.live.deployment.programId} on ${options.live.deployment.cluster}`);
+  const setup = options.live ? liveSealed(options.live, log) : stubSealed();
+  const trust = setup.trust;
+  const sealed = await runOffline(setup.provider, vault, "desk-bot-sealed");
 
   const plainReceipts = plain.map((s) => s.receipt);
   const sealedReceipts = sealed.map((s) => s.receipt);
@@ -154,7 +215,7 @@ export async function runDemo(options: DemoOptions): Promise<{ readonly plaintex
   writeJsonFile(join(options.out, "sealed", "receipts.json"), sealedReceipts);
 
   const plainCheck = verifyChain(plainReceipts, () => DEMO_POLICY);
-  const sealedCheck = verifySealedChain(sealedReceipts, trust);
+  const sealedCheck = await setup.verify(sealedReceipts);
 
   log(`\nGENKAI demo (${options.rpc ? "devnet" : "offline"}) - vault ${address}\n`);
   log(`  #  ${"proposal".padEnd(34)}${"SOL".padEnd(8)}${"plaintext".padEnd(11)}sealed`);
@@ -162,8 +223,9 @@ export async function runDemo(options: DemoOptions): Promise<{ readonly plaintex
     log(`  ${i + 1}  ${p.intent.padEnd(34)}${sol(p.lamports).padEnd(8)}${(plain[i]?.verdict ?? "-").padEnd(11)}${sealed[i]?.verdict ?? "-"}`);
   });
   log(`\nPlaintext chain: ${plainCheck.valid ? "valid" : "INVALID"} - every decision replayed against the published policy`);
-  log(`Sealed chain:    ${sealedCheck.valid ? "valid" : "INVALID"} - attested under the pinned cluster key; the policy was never published`);
-  log("Sealed run uses the in-process stub MXE (same circuit model, not confidential). See arcium/ for the Arcis circuit.");
+  log(`Sealed chain:    ${sealedCheck.valid ? "valid" : "INVALID"} - ${setup.label}`);
+  for (const d of sealedCheck.detail) log(`  - ${d}`);
+  if (!options.live) log("Sealed run uses the in-process stub MXE (same circuit model, not confidential). Use --live for the Arcium cluster.");
   log(`\nWrote ${options.out}`);
   return { plaintextValid: plainCheck.valid, sealedValid: sealedCheck.valid };
 }

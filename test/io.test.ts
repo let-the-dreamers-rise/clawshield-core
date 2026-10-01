@@ -123,6 +123,46 @@ test("malformed policies are refused", () => {
   }
 });
 
+const PROGRAM = "AwiVMGyi8P9mN6ig5FA74CTS6sncc7bbh8CNAxKXUERk";
+const POLICY_RECORD = "GsbwXfJraMomNxBcjYLcG3mxkBUiyWXAB32fGbSMQRdW";
+
+test("an on-chain attestation round-trips, and its addresses must be real public keys", async () => {
+  const base = JSON.parse(toJson((await sampleReceipt()) as never)) as Record<string, any>;
+  base.body.attestation = {
+    kind: "onchain",
+    circuitId: "genkai.policy.v2",
+    programId: PROGRAM,
+    policy: POLICY_RECORD,
+    decision: "7VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE",
+    computationOffset: { $bigint: "18446744073709551615" },
+    queueSignature: "5".repeat(87),
+    disclosure: "verdict",
+  };
+  const parsed = parseSignedReceipt(fromJson(JSON.stringify(base)));
+  const attestation = parsed.body.attestation;
+  assert.equal(attestation?.kind, "onchain");
+  assert.equal(attestation?.kind === "onchain" ? attestation.computationOffset : 0n, (1n << 64n) - 1n);
+
+  const bad: [string, (a: Record<string, any>) => void][] = [
+    ["body.attestation.programId", (a) => (a.programId = "not-base58-0OIl")],
+    ["body.attestation.computationOffset", (a) => (a.computationOffset = { $bigint: "18446744073709551616" })],
+    ["body.attestation.clusterPublicKey", (a) => (a.clusterPublicKey = "x")],
+    ["body.attestation.kind", (a) => (a.kind = "rumour")],
+  ];
+  for (const [path, mutate] of bad) {
+    const copy = JSON.parse(JSON.stringify(base)) as Record<string, any>;
+    mutate(copy.body.attestation);
+    assert.throws(() => parseSignedReceipt(fromJson(JSON.stringify(copy))), (err: unknown) => err instanceof SchemaError && err.path === path, path);
+  }
+});
+
+test("on-chain trust pins the program and the policy record", () => {
+  const trust = { commitment: "ab".repeat(32), circuitId: "genkai.policy.v2", programId: PROGRAM, policy: POLICY_RECORD };
+  assert.deepEqual(parseSealedTrust(trust), trust);
+  assert.throws(() => parseSealedTrust({ ...trust, policy: undefined }), SchemaError);
+  assert.throws(() => parseSealedTrust({ ...trust, clusterPublicKey: "MCowBQYDK2VwAyEA" }), SchemaError);
+});
+
 test("sealed trust needs all three pins", () => {
   const trust = { commitment: "ab".repeat(32), circuitId: "genkai.policy.v1", clusterPublicKey: "MCowBQYDK2VwAyEA" };
   assert.deepEqual(parseSealedTrust(trust), trust);

@@ -9,12 +9,10 @@
  */
 
 import { strict as assert } from "node:assert";
-import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { generateKeypair, signReceipt } from "../src/receipt/sign.ts";
 import { evaluate } from "../src/policy/engine.ts";
-import { encodePolicy, encodeRequest } from "../src/mxe/encoding.ts";
-import { evaluateCircuit } from "../src/mxe/circuit.ts";
+import { encodeRequest } from "../src/mxe/encoding.ts";
 import { SEALED_REASON, sealedCommitment } from "../src/policy/sealed.ts";
 import {
   DECISION_RECORD_SIZE,
@@ -25,25 +23,17 @@ import {
   policyRecordAddress,
   verifyOnChainDecision,
 } from "../src/mxe/onchain.ts";
-import { decodePubkey } from "../src/solana/base58.ts";
-import type { AccountInfo, RpcClient } from "../src/solana/rpc.ts";
 import { DEMO_POLICY } from "../src/cli/demo.ts";
 import { SYSTEM_PROGRAM_ID, toActionRequest } from "../src/solana/types.ts";
 import type { AgentState } from "../src/policy/types.ts";
 import type { ReceiptBody } from "../src/receipt/types.ts";
+import type { MxeAttestation } from "../src/mxe/types.ts";
+import { PROGRAM, decisionRecordBytes, fakeChain, policyIdBytes, policyRecordBytes, type FakeAccount } from "./helpers/chain.ts";
 
-const PROGRAM = "AwiVMGyi8P9mN6ig5FA74CTS6sncc7bbh8CNAxKXUERk";
 const AUTHORITY = "9C6hybhQ6Aycep9jaUnP6uL9ZYvDjUp1aSkFWPUFJtpj";
 const SALT = "ab".repeat(32);
 const AT = Date.UTC(2026, 9, 1, 12, 0, 0);
 const OFFSET = 4242n;
-
-const disc = (name: string) => createHash("sha256").update(`account:${name}`).digest().subarray(0, 8);
-const u64 = (x: bigint) => {
-  const b = Buffer.alloc(8);
-  b.writeBigUInt64LE(x);
-  return b;
-};
 
 const state: AgentState = { spentInWindow: 0n, windowStartedAt: AT, callsInWindow: 0, drawdownFromPeak: 0n, revoked: false };
 const request = (lamports: bigint) =>
@@ -52,87 +42,67 @@ const request = (lamports: bigint) =>
     "desk-bot",
   );
 
-const policyId = Buffer.alloc(32);
-Buffer.from(DEMO_POLICY.policyId).copy(policyId);
-const POLICY = policyRecordAddress(PROGRAM, AUTHORITY, policyId);
+const POLICY = policyRecordAddress(PROGRAM, AUTHORITY, policyIdBytes(DEMO_POLICY.policyId));
 const DECISION = decisionRecordAddress(PROGRAM, POLICY, OFFSET);
+const commitment = sealedCommitment(DEMO_POLICY, SALT);
 
-function policyRecordBytes(commitment: string, status = 1): Uint8Array {
-  return Buffer.concat([
-    disc("PolicyRecord"),
-    decodePubkey(AUTHORITY),
-    policyId,
-    Buffer.from(commitment, "hex"),
-    Buffer.alloc(32, 7),
-    Buffer.alloc(16, 1),
-    Buffer.from([status, 254, 87]),
-    Buffer.alloc(5),
-    Buffer.alloc(87 * 32, 9),
-  ]);
-}
+const policyAccount = (c = commitment, status = 1): FakeAccount => ({
+  data: policyRecordBytes({ authority: AUTHORITY, policyId: DEMO_POLICY.policyId, commitment: c, status }),
+});
 
-function decisionRecordBytes(lamports: bigint, over: { verdict?: number; mask?: number; status?: number; fieldsFor?: bigint } = {}): Uint8Array {
-  const out = evaluateCircuit(encodePolicy(DEMO_POLICY), encodeRequest(request(lamports), state));
-  return Buffer.concat([
-    disc("DecisionRecord"),
-    decodePubkey(POLICY),
-    u64(OFFSET),
-    encodeRequestFields(encodeRequest(request(over.fieldsFor ?? lamports), state)),
-    Buffer.from([over.status ?? 1, over.verdict ?? out.verdict]),
-    Buffer.from(Uint32Array.of(over.mask ?? out.mask).buffer),
-    u64(100n),
-    u64(105n),
-    Buffer.from([255]),
-  ]);
-}
+const decisionAccount = (lamports: bigint, over: Partial<Parameters<typeof decisionRecordBytes>[0]> = {}): FakeAccount => ({
+  data: decisionRecordBytes({ policy: POLICY, offset: OFFSET, sealedPolicy: DEMO_POLICY, request: request(lamports), state, ...over }),
+});
 
-function sealedReceipt(lamports: bigint, commitment = sealedCommitment(DEMO_POLICY, SALT)) {
+function sealedReceipt(lamports: bigint, opts: { verdictOnly?: boolean } = {}) {
   const decision = evaluate(DEMO_POLICY, request(lamports), state, AT);
+  const attestation: MxeAttestation = {
+    kind: "onchain",
+    circuitId: "genkai.policy.v2",
+    programId: PROGRAM,
+    policy: POLICY,
+    decision: DECISION,
+    computationOffset: OFFSET,
+    queueSignature: "1".repeat(64),
+    disclosure: opts.verdictOnly ? "verdict" : undefined,
+  };
   const body: ReceiptBody = {
     receiptId: "r1",
     schemaVersion: 1,
     policyHash: commitment,
     request: request(lamports),
     state,
-    decision: { ...decision, reasons: decision.reasons.map((r) => ({ ...r, reason: SEALED_REASON })), policyId: "genkai.policy.v1", policyVersion: 0 },
+    decision: {
+      ...decision,
+      reasons: opts.verdictOnly ? [] : decision.reasons.map((r) => ({ ...r, reason: SEALED_REASON })),
+      policyId: "genkai.policy.v2",
+      policyVersion: 0,
+    },
+    attestation,
     previousReceiptHash: null,
   };
   return signReceipt(body, generateKeypair());
 }
 
-function fakeRpc(accounts: Record<string, { data: Uint8Array; owner?: string }>): RpcClient {
-  const none = async () => {
-    throw new Error("not used");
-  };
-  return {
-    getLatestBlockhash: none,
-    getBlockHeight: none,
-    sendTransaction: none,
-    getSignatureStatuses: none,
-    getTransaction: none,
-    getAccountInfo: async (address: string): Promise<AccountInfo | null> => {
-      const a = accounts[address];
-      return a ? { owner: a.owner ?? PROGRAM, lamports: 1n, data: a.data, executable: false } : null;
-    },
-  };
-}
-
-const commitment = sealedCommitment(DEMO_POLICY, SALT);
+const check = (receipt: ReturnType<typeof sealedReceipt>, accounts: Record<string, FakeAccount>, pin: { policy?: string; computationOffset?: bigint } = {}) =>
+  verifyOnChainDecision(receipt, { rpc: fakeChain(accounts).rpc, programId: PROGRAM, decision: DECISION, ...pin });
 
 test("a decision record decodes to exactly the layout the program declares", () => {
-  const bytes = decisionRecordBytes(10_000_000n);
+  const bytes = decisionAccount(10_000_000n).data;
   assert.equal(bytes.length, DECISION_RECORD_SIZE);
   const d = decodeDecisionRecord(bytes);
   assert.equal(d.policy, POLICY);
   assert.equal(d.computationOffset, OFFSET);
   assert.equal(d.status, 1);
   assert.equal(d.verdict, 0);
+  assert.equal(d.discloseRules, true);
   assert.deepEqual(d.requestFields, encodeRequestFields(encodeRequest(request(10_000_000n), state)));
-  assert.throws(() => decodeDecisionRecord(policyRecordBytes(commitment)), /discriminator/);
+  assert.equal(decodeDecisionRecord(decisionAccount(10_000_000n, { discloseRules: false }).data).discloseRules, false);
+  assert.throws(() => decodeDecisionRecord(policyAccount().data), /discriminator/);
 });
 
 test("a policy record exposes its commitment and status, never its plaintext", () => {
-  const p = decodePolicyRecord(policyRecordBytes(commitment));
+  const p = decodePolicyRecord(policyAccount().data);
   assert.equal(p.authority, AUTHORITY);
   assert.equal(p.commitment, commitment);
   assert.equal(p.status, "active");
@@ -141,34 +111,44 @@ test("a policy record exposes its commitment and status, never its plaintext", (
 
 test("a sealed receipt matching the on-chain decision verifies", async () => {
   for (const lamports of [10_000_000n, 30_000_000n, 200_000_000n]) {
-    const rpc = fakeRpc({ [POLICY]: { data: policyRecordBytes(commitment) }, [DECISION]: { data: decisionRecordBytes(lamports) } });
-    const result = await verifyOnChainDecision(sealedReceipt(lamports), { rpc, programId: PROGRAM, decision: DECISION });
+    const result = await check(sealedReceipt(lamports), { [POLICY]: policyAccount(), [DECISION]: decisionAccount(lamports) }, { policy: POLICY, computationOffset: OFFSET });
     assert.equal(result.valid, true, `${lamports}: ${result.detail.join("; ")}`);
+    assert.equal(result.decidedSlot, 105n);
   }
 });
 
+test("a verdict-only receipt verifies against a record whose mask was withheld by the circuit", async () => {
+  const accounts = { [POLICY]: policyAccount(), [DECISION]: decisionAccount(200_000_000n, { discloseRules: false }) };
+  const result = await check(sealedReceipt(200_000_000n, { verdictOnly: true }), accounts);
+  assert.equal(result.valid, true, result.detail.join("; "));
+});
+
 test("every way the chain and the receipt can disagree is caught", async () => {
-  const cases: [string, Record<string, { data: Uint8Array; owner?: string }>, string, ReturnType<typeof sealedReceipt>?][] = [
-    ["verdict differs", { [POLICY]: { data: policyRecordBytes(commitment) }, [DECISION]: { data: decisionRecordBytes(10_000_000n, { verdict: 1, mask: 1 }) } }, "verdict_mismatch"],
-    ["rule mask differs", { [POLICY]: { data: policyRecordBytes(commitment) }, [DECISION]: { data: decisionRecordBytes(200_000_000n, { mask: 1 << 14 }) } }, "verdict_mismatch"],
-    ["different request evaluated", { [POLICY]: { data: policyRecordBytes(commitment) }, [DECISION]: { data: decisionRecordBytes(10_000_000n, { fieldsFor: 11_000_000n }) } }, "request_mismatch"],
-    ["still pending", { [POLICY]: { data: policyRecordBytes(commitment) }, [DECISION]: { data: decisionRecordBytes(10_000_000n, { status: 0 }) } }, "not_decided"],
-    ["another policy's commitment", { [POLICY]: { data: policyRecordBytes("cd".repeat(32)) }, [DECISION]: { data: decisionRecordBytes(10_000_000n) } }, "commitment_mismatch"],
-    ["account forged by another program", { [POLICY]: { data: policyRecordBytes(commitment) }, [DECISION]: { data: decisionRecordBytes(10_000_000n), owner: SYSTEM_PROGRAM_ID } }, "wrong_owner"],
-    ["no such decision", { [POLICY]: { data: policyRecordBytes(commitment) } }, "not_found"],
+  const ok = policyAccount();
+  const cases: [string, Record<string, FakeAccount>, string, { lamports?: bigint; verdictOnly?: boolean; pin?: { policy?: string; computationOffset?: bigint } }?][] = [
+    ["verdict differs", { [POLICY]: ok, [DECISION]: decisionAccount(10_000_000n, { verdict: 1, mask: 1 }) }, "verdict_mismatch"],
+    ["rule mask differs", { [POLICY]: ok, [DECISION]: decisionAccount(200_000_000n, { mask: 1 << 14 }) }, "verdict_mismatch", { lamports: 200_000_000n }],
+    ["different request evaluated", { [POLICY]: ok, [DECISION]: decisionAccount(10_000_000n, { fieldsFor: request(11_000_000n) }) }, "request_mismatch"],
+    ["still pending", { [POLICY]: ok, [DECISION]: decisionAccount(10_000_000n, { status: 0 }) }, "not_decided"],
+    ["another policy's commitment", { [POLICY]: policyAccount("cd".repeat(32)), [DECISION]: decisionAccount(10_000_000n) }, "commitment_mismatch"],
+    ["account forged by another program", { [POLICY]: ok, [DECISION]: { ...decisionAccount(10_000_000n), owner: SYSTEM_PROGRAM_ID } }, "wrong_owner"],
+    ["no such decision", { [POLICY]: ok }, "not_found"],
+    // A copycat registers its own PolicyRecord under the same public commitment, with a
+    // permissive policy behind it. Only pinning the record's address catches that.
+    ["decided against an unpinned policy record", { [POLICY]: ok, [DECISION]: decisionAccount(10_000_000n) }, "policy_mismatch", { pin: { policy: "GsbwXfJraMomNxBcjYLcG3mxkBUiyWXAB32fGbSMQRdW" } }],
+    ["a different computation", { [POLICY]: ok, [DECISION]: decisionAccount(10_000_000n) }, "computation_mismatch", { pin: { computationOffset: OFFSET + 1n } }],
+    ["rules claimed, circuit withheld them", { [POLICY]: ok, [DECISION]: decisionAccount(200_000_000n, { discloseRules: false }) }, "disclosure_mismatch", { lamports: 200_000_000n }],
+    ["verdict only claimed, circuit disclosed rules", { [POLICY]: ok, [DECISION]: decisionAccount(200_000_000n) }, "disclosure_mismatch", { lamports: 200_000_000n, verdictOnly: true }],
   ];
-  for (const [label, accounts, failure] of cases) {
-    const result = await verifyOnChainDecision(sealedReceipt(label === "rule mask differs" ? 200_000_000n : 10_000_000n), {
-      rpc: fakeRpc(accounts),
-      programId: PROGRAM,
-      decision: DECISION,
-    });
+  for (const [label, accounts, failure, opts = {}] of cases) {
+    const result = await check(sealedReceipt(opts.lamports ?? 10_000_000n, { verdictOnly: opts.verdictOnly }), accounts, opts.pin);
     assert.equal(result.valid, false, label);
     assert.ok(result.failures.includes(failure as never), `${label}: ${result.failures.join(",")}`);
   }
 });
 
 test("addresses derive from the program's seeds", () => {
-  assert.notEqual(policyRecordAddress(PROGRAM, AUTHORITY, policyId), policyRecordAddress(PROGRAM, "7VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE", policyId));
+  const id = policyIdBytes(DEMO_POLICY.policyId);
+  assert.notEqual(policyRecordAddress(PROGRAM, AUTHORITY, id), policyRecordAddress(PROGRAM, "7VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE", id));
   assert.notEqual(decisionRecordAddress(PROGRAM, POLICY, 1n), decisionRecordAddress(PROGRAM, POLICY, 2n));
 });

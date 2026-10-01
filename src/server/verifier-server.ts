@@ -16,7 +16,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { fromJson, toJson } from "../io/json.ts";
 import { SchemaError } from "../io/validate.ts";
 import { createRateLimiter, type RateLimitConfig } from "./rate-limit.ts";
-import { handleVerifyChain, handleVerifyReceipt } from "./handlers.ts";
+import { handleVerifyChain, handleVerifyReceipt, type HandlerContext } from "./handlers.ts";
+import type { RpcClient } from "../solana/rpc.ts";
 import { PAGE_CSP, PAGE_HTML } from "./page.ts";
 
 export interface VerifierServerConfig {
@@ -25,6 +26,8 @@ export interface VerifierServerConfig {
   /** Read the client address from X-Forwarded-For. Only behind a proxy you control. */
   readonly trustProxy?: boolean;
   readonly log?: (line: string) => void;
+  /** Enables checking on-chain attestations against the cluster's DecisionRecords. */
+  readonly rpc?: RpcClient;
 }
 
 class HttpError extends Error {
@@ -42,7 +45,7 @@ const BASE_HEADERS = {
   "access-control-allow-origin": "*",
 } as const;
 
-const ROUTES: Readonly<Record<string, { readonly method: "GET" | "POST"; readonly handle?: (body: unknown) => unknown }>> = {
+const ROUTES: Readonly<Record<string, { readonly method: "GET" | "POST"; readonly handle?: (body: unknown, ctx: HandlerContext) => Promise<unknown> }>> = {
   "/": { method: "GET" },
   "/healthz": { method: "GET" },
   "/v1/receipts/verify": { method: "POST", handle: handleVerifyReceipt },
@@ -132,7 +135,8 @@ export function createVerifierServer(config: VerifierServerConfig = {}): Server 
     } catch {
       throw new HttpError(400, "Body is not valid JSON");
     }
-    send(res, 200, { success: true, data: route.handle?.(body) ?? null, error: null });
+    const data = route.handle ? await route.handle(body, { rpc: config.rpc }) : null;
+    send(res, 200, { success: true, data, error: null });
   }
 
   const server = createServer((req, res) => {

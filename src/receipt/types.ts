@@ -95,6 +95,8 @@ export type VerificationFailure =
   | "commitment_mismatch"
   | "attestation_missing"
   | "attestation_invalid"
+  // An on-chain attestation checked without RPC access: not invalid, but not verified either.
+  | "attestation_unchecked"
   | "disclosure_leak";
 
 export interface VerificationResult {

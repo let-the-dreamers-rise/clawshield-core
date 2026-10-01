@@ -13,13 +13,32 @@
 
 import { hashPolicy } from "../receipt/sign.ts";
 import { verifyChain, verifyReceipt } from "../receipt/verify.ts";
-import { verifySealedChain, verifySealedReceipt, type SealedTrust } from "../receipt/verify-sealed.ts";
+import {
+  isOnChainTrust,
+  verifySealedChain,
+  verifySealedChainOnChain,
+  verifySealedReceipt,
+  verifySealedReceiptOnChain,
+  type SealedTrust,
+} from "../receipt/verify-sealed.ts";
+import type { RpcClient } from "../solana/rpc.ts";
 import { SchemaError, parsePolicy, parseSealedTrust, parseSignedReceipt } from "../io/schema.ts";
 import { array, opt, record, hex64 } from "../io/validate.ts";
 import type { Policy } from "../policy/types.ts";
 import type { VerificationResult } from "../receipt/types.ts";
 
 export const MAX_CHAIN_LENGTH = 1_000;
+/** Each on-chain receipt costs two RPC reads, so a chain checked on chain is capped lower. */
+export const MAX_ONCHAIN_CHAIN_LENGTH = 100;
+
+/**
+ * What the handlers may reach beyond the request body. Without an RPC client, receipts with an
+ * on-chain attestation are still checked in full except for the record itself, and come back
+ * attestation_unchecked rather than valid.
+ */
+export interface HandlerContext {
+  readonly rpc?: RpcClient;
+}
 
 export interface VerificationData extends VerificationResult {
   readonly mode: "plaintext" | "sealed";
@@ -38,7 +57,7 @@ function anchorOf(o: Readonly<Record<string, unknown>>): Anchor {
     : { mode: "sealed", trust: parseSealedTrust(o["trust"], "trust") };
 }
 
-export function handleVerifyReceipt(body: unknown): VerificationData {
+export async function handleVerifyReceipt(body: unknown, ctx: HandlerContext = {}): Promise<VerificationData> {
   const o = record(body, "", ["receipt"], ["policy", "trust", "expectedPreviousHash"]);
   const receipt = parseSignedReceipt(o["receipt"], "receipt");
   const anchor = anchorOf(o);
@@ -48,11 +67,13 @@ export function handleVerifyReceipt(body: unknown): VerificationData {
   const result =
     anchor.mode === "plaintext"
       ? verifyReceipt(receipt, anchor.policy, { expectedPreviousHash })
-      : verifySealedReceipt(receipt, anchor.trust, { expectedPreviousHash });
+      : isOnChainTrust(anchor.trust) && ctx.rpc
+        ? await verifySealedReceiptOnChain(receipt, anchor.trust, { rpc: ctx.rpc, expectedPreviousHash })
+        : verifySealedReceipt(receipt, anchor.trust, { expectedPreviousHash });
   return { mode: anchor.mode, ...result };
 }
 
-export function handleVerifyChain(body: unknown): VerificationData {
+export async function handleVerifyChain(body: unknown, ctx: HandlerContext = {}): Promise<VerificationData> {
   const o = record(body, "", ["receipts"], ["policy", "trust"]);
   const receipts = array(o["receipts"], "receipts", parseSignedReceipt, MAX_CHAIN_LENGTH);
   const anchor = anchorOf(o);
@@ -61,6 +82,12 @@ export function handleVerifyChain(body: unknown): VerificationData {
     const expected = hashPolicy(anchor.policy);
     const result = verifyChain(receipts, (hash) => (hash === expected ? anchor.policy : undefined));
     return { mode: "plaintext", ...result };
+  }
+  if (isOnChainTrust(anchor.trust) && ctx.rpc) {
+    if (receipts.length > MAX_ONCHAIN_CHAIN_LENGTH) {
+      throw new SchemaError("receipts", `at most ${MAX_ONCHAIN_CHAIN_LENGTH} receipts when checking on chain`);
+    }
+    return { mode: "sealed", ...(await verifySealedChainOnChain(receipts, anchor.trust, ctx.rpc)) };
   }
   return { mode: "sealed", ...verifySealedChain(receipts, anchor.trust) };
 }

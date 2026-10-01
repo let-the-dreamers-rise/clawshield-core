@@ -7,7 +7,8 @@
 
 import type { ActionRequest, AgentState, Decision, Policy, RuleResult, Verdict } from "../policy/types.ts";
 import type { AuthorisedTransaction, ExecutionOutcome, ReceiptBody, SignedReceipt } from "../receipt/types.ts";
-import type { MxeAttestation } from "../mxe/types.ts";
+import type { MxeAttestation, OnChainAttestation } from "../mxe/types.ts";
+import { decodePubkey } from "../solana/base58.ts";
 import type { SealedTrust } from "../receipt/verify-sealed.ts";
 import {
   SchemaError,
@@ -93,13 +94,50 @@ function parseOutcome(v: unknown, path: string): ExecutionOutcome {
   });
 }
 
-function parseAttestation(v: unknown, path: string): MxeAttestation {
-  const o = record(v, path, ["circuitId", "clusterPublicKey", "signature"], ["disclosure"]);
+function pubkey(v: unknown, path: string): string {
+  const s = str(v, path, { nonEmpty: true, max: 44 });
+  try {
+    decodePubkey(s);
+  } catch {
+    throw new SchemaError(path, "expected a base58 public key");
+  }
+  return s;
+}
+
+function u64(v: unknown, path: string): bigint {
+  const x = big(v, path);
+  if (x < 0n || x >= 1n << 64n) throw new SchemaError(path, "expected a u64");
+  return x;
+}
+
+const disclosureOf = (o: Obj, path: string) => opt(o, "disclosure", path, (x, p) => oneOf(x, p, ["verdict"] as const));
+
+function parseOnChainAttestation(o: Obj, path: string): OnChainAttestation {
+  record(o, path, ["kind", "circuitId", "programId", "policy", "decision", "computationOffset", "queueSignature"], ["disclosure"]);
   return compact({
+    kind: "onchain" as const,
+    circuitId: str(o["circuitId"], at(path, "circuitId"), { nonEmpty: true, max: 128 }),
+    programId: pubkey(o["programId"], at(path, "programId")),
+    policy: pubkey(o["policy"], at(path, "policy")),
+    decision: pubkey(o["decision"], at(path, "decision")),
+    computationOffset: u64(o["computationOffset"], at(path, "computationOffset")),
+    queueSignature: str(o["queueSignature"], at(path, "queueSignature"), { nonEmpty: true, max: 128 }),
+    disclosure: disclosureOf(o, path),
+  });
+}
+
+function parseAttestation(v: unknown, path: string): MxeAttestation {
+  if (typeof v === "object" && v !== null && !Array.isArray(v) && Object.hasOwn(v, "kind")) {
+    const kind = oneOf((v as Obj)["kind"], at(path, "kind"), ["onchain", "signed"] as const);
+    if (kind === "onchain") return parseOnChainAttestation(v as Obj, path);
+  }
+  const o = record(v, path, ["circuitId", "clusterPublicKey", "signature"], ["kind", "disclosure"]);
+  return compact({
+    kind: opt(o, "kind", path, (x, p) => oneOf(x, p, ["signed"] as const)),
     circuitId: str(o["circuitId"], at(path, "circuitId"), { nonEmpty: true }),
     clusterPublicKey: str(o["clusterPublicKey"], at(path, "clusterPublicKey"), { nonEmpty: true }),
     signature: str(o["signature"], at(path, "signature"), { nonEmpty: true }),
-    disclosure: opt(o, "disclosure", path, (x, p) => oneOf(x, p, ["verdict"] as const)),
+    disclosure: disclosureOf(o, path),
   });
 }
 
@@ -202,7 +240,17 @@ export function parsePolicy(v: unknown, path = ""): Policy {
   });
 }
 
+/** Either form of trust anchor; which one is decided by whether a program id is pinned. */
 export function parseSealedTrust(v: unknown, path = ""): SealedTrust {
+  if (typeof v === "object" && v !== null && !Array.isArray(v) && Object.hasOwn(v, "programId")) {
+    const o = record(v, path, ["commitment", "circuitId", "programId", "policy"]);
+    return {
+      commitment: hex64(o["commitment"], at(path, "commitment")),
+      circuitId: str(o["circuitId"], at(path, "circuitId"), { nonEmpty: true, max: 128 }),
+      programId: pubkey(o["programId"], at(path, "programId")),
+      policy: pubkey(o["policy"], at(path, "policy")),
+    };
+  }
   const o = record(v, path, ["commitment", "circuitId", "clusterPublicKey"]);
   return {
     commitment: hex64(o["commitment"], at(path, "commitment")),

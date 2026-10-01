@@ -3,12 +3,15 @@
  *
  *   genkai keygen <out.json>                          new vault key, solana-keygen format
  *   genkai seal <policy.json> <out.json>              commitment + secret salt for a policy
- *   genkai verify <receipt.json> --policy p | --trust t [--previous <hash>]
- *   genkai verify-chain <receipts.json> --policy p | --trust t
+ *   genkai verify <receipt.json> --policy p | --trust t [--previous <hash>] [--rpc <url>]
+ *   genkai verify-chain <receipts.json> --policy p | --trust t [--rpc <url>]
  *   genkai verify-execution <receipt.json> --rpc <url>
- *   genkai verify-onchain <receipt.json> --decision <address> --program <id> --rpc <url>
- *   genkai serve [--port 8787] [--host 127.0.0.1] [--trust-proxy]
- *   genkai demo [--out dir] [--devnet --keypair file [--rpc url]]
+ *   genkai verify-onchain <receipt.json> --decision <address> --program <id> --rpc <url> [--policy-record <address>]
+ *   genkai serve [--port 8787] [--host 127.0.0.1] [--trust-proxy] [--rpc <url>]
+ *   genkai demo [--out dir] [--devnet --keypair file [--rpc url]] [--live deployment.json --authority file]
+ *
+ * --rpc on verify and verify-chain is what lets a receipt from the live Arcium MXE verify: its
+ * evidence is a DecisionRecord on chain. Without it such a receipt reports attestation_unchecked.
  *
  * Exit codes: 0 success or valid, 1 verified invalid, 2 usage or input error.
  */
@@ -27,7 +30,9 @@ import { verifyExecution } from "../solana/executor.ts";
 import { verifyOnChainDecision } from "../mxe/onchain.ts";
 import { keypairFromSolanaSecretKey, solanaAddress, solanaSecretKey } from "../solana/keys.ts";
 import { UsageError, readJsonFile, writeSecretFile } from "./files.ts";
-import { runDemo } from "./demo.ts";
+import { runDemo, type LiveOptions } from "./demo.ts";
+import { parseDeployment } from "./deployment.ts";
+import type { Keypair } from "../receipt/sign.ts";
 
 const DEVNET_RPC = "https://api.devnet.solana.com";
 const out = (line: string) => process.stdout.write(`${line}\n`);
@@ -54,6 +59,18 @@ function anchorArgs(values: { policy?: unknown; trust?: unknown }): Record<strin
     ? { policy: readJsonFile(String(values.policy)) }
     : { trust: readJsonFile(String(values.trust)) };
 }
+
+function readSolanaKey(path: string): Keypair {
+  let secret: Uint8Array;
+  try {
+    secret = Uint8Array.from(JSON.parse(readFileSync(path, "utf8")) as number[]);
+    return keypairFromSolanaSecretKey(secret);
+  } catch (err) {
+    throw new UsageError(`${path} is not a solana-keygen keypair file: ${(err as Error).message}`);
+  }
+}
+
+const rpcOf = (url: string | undefined) => (url ? { rpc: createRpcClient({ endpoint: url }) } : {});
 
 function report(result: VerificationData): number {
   if (result.valid) {
@@ -86,16 +103,16 @@ const commands: Record<string, (argv: readonly string[]) => Promise<number> | nu
     return 0;
   },
 
-  verify(argv) {
-    const { values, positionals } = parse(argv, { policy: { type: "string" }, trust: { type: "string" }, previous: { type: "string" } });
+  async verify(argv) {
+    const { values, positionals } = parse(argv, { policy: { type: "string" }, trust: { type: "string" }, previous: { type: "string" }, rpc: { type: "string" } });
     const receipt = readJsonFile(positional(positionals, 0, "receipt.json"));
-    return report(handleVerifyReceipt({ receipt, ...anchorArgs(values), expectedPreviousHash: values.previous }));
+    return report(await handleVerifyReceipt({ receipt, ...anchorArgs(values), expectedPreviousHash: values.previous }, rpcOf(values.rpc)));
   },
 
-  "verify-chain"(argv) {
-    const { values, positionals } = parse(argv, { policy: { type: "string" }, trust: { type: "string" } });
+  async "verify-chain"(argv) {
+    const { values, positionals } = parse(argv, { policy: { type: "string" }, trust: { type: "string" }, rpc: { type: "string" } });
     const receipts = readJsonFile(positional(positionals, 0, "receipts.json"));
-    return report(handleVerifyChain({ receipts, ...anchorArgs(values) }));
+    return report(await handleVerifyChain({ receipts, ...anchorArgs(values) }, rpcOf(values.rpc)));
   },
 
   async "verify-execution"(argv) {
@@ -108,14 +125,18 @@ const commands: Record<string, (argv: readonly string[]) => Promise<number> | nu
   },
 
   async "verify-onchain"(argv) {
-    const { values, positionals } = parse(argv, { decision: { type: "string" }, program: { type: "string" }, rpc: { type: "string" } });
+    const { values, positionals } = parse(argv, { decision: { type: "string" }, program: { type: "string" }, rpc: { type: "string" }, "policy-record": { type: "string" } });
     if (!values.decision || !values.program || !values.rpc) throw new UsageError("Needs --decision, --program and --rpc");
     const receipt = parseSignedReceipt(readJsonFile(positional(positionals, 0, "receipt.json")), "receipt");
     const result = await verifyOnChainDecision(receipt, {
       rpc: createRpcClient({ endpoint: values.rpc }),
       programId: values.program,
       decision: values.decision,
+      policy: values["policy-record"],
     });
+    if (values["policy-record"] === undefined) {
+      out("note: no --policy-record pinned; a look-alike policy record with the same commitment would also pass");
+    }
     if (result.valid) {
       out(`VALID (on-chain): the cluster recorded this verdict at slot ${result.decidedSlot}`);
       return 0;
@@ -126,11 +147,11 @@ const commands: Record<string, (argv: readonly string[]) => Promise<number> | nu
   },
 
   serve(argv) {
-    const { values } = parse(argv, { port: { type: "string" }, host: { type: "string" }, "trust-proxy": { type: "boolean" } });
+    const { values } = parse(argv, { port: { type: "string" }, host: { type: "string" }, "trust-proxy": { type: "boolean" }, rpc: { type: "string" } });
     const port = Number(values.port ?? process.env["PORT"] ?? 8787);
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw new UsageError(`Bad port ${values.port}`);
     const host = values.host ?? "127.0.0.1";
-    const server = createVerifierServer({ trustProxy: values["trust-proxy"] ?? false });
+    const server = createVerifierServer({ trustProxy: values["trust-proxy"] ?? false, ...rpcOf(values.rpc ?? process.env["GENKAI_RPC"]) });
     server.listen(port, host, () => out(`GENKAI verifier listening on http://${host}:${port}`));
     const stop = () => server.close(() => process.exit(0));
     process.once("SIGINT", stop);
@@ -139,24 +160,45 @@ const commands: Record<string, (argv: readonly string[]) => Promise<number> | nu
   },
 
   async demo(argv) {
-    const { values } = parse(argv, { out: { type: "string" }, devnet: { type: "boolean" }, keypair: { type: "string" }, rpc: { type: "string" } });
+    const { values } = parse(argv, {
+      out: { type: "string" },
+      devnet: { type: "boolean" },
+      keypair: { type: "string" },
+      rpc: { type: "string" },
+      live: { type: "string" },
+      authority: { type: "string" },
+    });
     const outDir = values.out ?? "demo-out";
+    const live = liveOptions(values.live, values.authority);
     if (!values.devnet) {
-      const r = await runDemo({ out: outDir });
+      const r = await runDemo({ out: outDir, live });
       return r.plaintextValid && r.sealedValid ? 0 : 1;
     }
     if (!values.keypair) throw new UsageError("--devnet needs --keypair <file> holding a funded devnet key");
-    const secret = Uint8Array.from(JSON.parse(readFileSync(values.keypair, "utf8")) as number[]);
-    const vault = keypairFromSolanaSecretKey(secret);
+    const vault = readSolanaKey(values.keypair);
     const rpc = createRpcClient({ endpoint: values.rpc ?? DEVNET_RPC });
     const account = await rpc.getAccountInfo(solanaAddress(vault.publicKey));
     if (!account || account.lamports < 100_000_000n) {
       throw new UsageError(`Fund ${solanaAddress(vault.publicKey)} with at least 0.1 devnet SOL first: solana airdrop 1 ${solanaAddress(vault.publicKey)} --url devnet`);
     }
-    const r = await runDemo({ out: outDir, vault, rpc });
+    const r = await runDemo({ out: outDir, vault, rpc, live });
     return r.plaintextValid && r.sealedValid ? 0 : 1;
   },
 };
+
+function liveOptions(deploymentPath: string | undefined, authorityPath: string | undefined): LiveOptions | undefined {
+  if (deploymentPath === undefined) {
+    if (authorityPath !== undefined) throw new UsageError("--authority is only used with --live");
+    return undefined;
+  }
+  if (authorityPath === undefined) throw new UsageError("--live needs --authority <file>: the policy authority's keypair");
+  const deployment = parseDeployment(readJsonFile(deploymentPath), "deployment");
+  const authority = readSolanaKey(authorityPath);
+  if (solanaAddress(authority.publicKey) !== deployment.authority) {
+    throw new UsageError(`${authorityPath} is ${solanaAddress(authority.publicKey)}, but the policy authority is ${deployment.authority}`);
+  }
+  return { deployment, authority, rpc: createRpcClient({ endpoint: deployment.rpc }) };
+}
 
 async function main(argv: readonly string[]): Promise<number> {
   const [name, ...rest] = argv;

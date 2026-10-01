@@ -35,7 +35,7 @@ export interface StubMxeConfig {
   readonly keys: Keypair;
 }
 
-export function createStubMxe(config: StubMxeConfig): MxeClient {
+export function createStubMxe(config: StubMxeConfig): MxeClient & { readonly clusterPublicKey: string } {
   const commitment = sealedCommitment(config.policy, config.salt);
   // Encoded once. Throws EncodingError for a policy the circuit cannot hold.
   const sealed = encodePolicy(config.policy);

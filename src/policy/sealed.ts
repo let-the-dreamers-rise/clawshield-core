@@ -36,7 +36,16 @@ import { evaluate } from "./engine.ts";
 import { canonicalBytes, type Canonicalisable } from "../receipt/canonical.ts";
 import { hashPolicy } from "../receipt/sign.ts";
 import type { ActionRequest, AgentState, Decision, Policy, RuleResult } from "./types.ts";
-import { attestedPayload, type Disclosure, type MxeAttestation, type MxeClient } from "../mxe/types.ts";
+import {
+  attestedPayload,
+  isOnChainAttestation,
+  type Disclosure,
+  type MxeAttestation,
+  type MxeClient,
+  type MxeEvaluationOutput,
+} from "../mxe/types.ts";
+import { checkOnChainDecision } from "../mxe/onchain.ts";
+import type { RpcClient } from "../solana/rpc.ts";
 
 export type { Disclosure } from "../mxe/types.ts";
 
@@ -116,16 +125,31 @@ export function createPlaintextPolicyProvider(policy: Policy): PolicyProvider {
   });
 }
 
-export interface SealedProviderConfig {
+/**
+ * What the provider checks an MXE answer against, pinned by the operator out of band.
+ *
+ *   clusterPublicKey  an MXE that signs attestations offline (the in-process stub)
+ *   onChain           the live Arcium path: the answer must be the DecisionRecord the GENKAI
+ *                     program wrote, against this exact PolicyRecord, read back over RPC
+ */
+export type AttestationAnchor =
+  | { readonly clusterPublicKey: string; readonly onChain?: undefined }
+  | { readonly onChain: OnChainAnchor; readonly clusterPublicKey?: undefined };
+
+export interface OnChainAnchor {
+  readonly rpc: RpcClient;
+  readonly programId: string;
+  readonly policy: string;
+}
+
+export type SealedProviderConfig = {
   /** The commitment this provider will accept, and only this one. */
   readonly commitment: string;
   readonly circuitId: string;
-  /** SPKI DER, base64. Pinned by the operator out of band. */
-  readonly clusterPublicKey: string;
   readonly mxe: MxeClient;
   /** Defaults to "rules". See Disclosure in src/mxe/types.ts. */
   readonly disclosure?: Disclosure;
-}
+} & AttestationAnchor;
 
 export function createSealedPolicyProvider(config: SealedProviderConfig): PolicyProvider {
   const disclosure: Disclosure = config.disclosure ?? "rules";
@@ -169,21 +193,11 @@ export function createSealedPolicyProvider(config: SealedProviderConfig): Policy
       );
     }
 
-    // 4. The attestation verifies under the pinned cluster key, over a payload that includes
-    //    the verdict, the firing rules and the disclosure mode. This is what stops an operator
-    //    sitting between the MXE and the receipt writer from flipping deny to allow.
-    const payload = attestedPayload(
-      { policyCommitment: output.policyCommitment, request, state, decidedAt, disclosure },
-      output.attestation.circuitId,
-      output.verdict,
-      output.ruleIds,
-    );
-    if (!verifyAttestation(payload as unknown as Canonicalisable, output.attestation, config.clusterPublicKey)) {
-      throw new SealedPolicyError(
-        "bad_attestation",
-        "The MXE attestation does not verify under the pinned cluster key",
-      );
-    }
+    // 4. The attestation verifies under the pinned anchor, over the verdict, the firing rules
+    //    and the disclosure mode. This is what stops an operator sitting between the MXE and
+    //    the receipt writer from flipping deny to allow.
+    const problem = await attestationProblem(config, output, { request, state, decidedAt, disclosure });
+    if (problem !== null) throw new SealedPolicyError("bad_attestation", problem);
 
     const reasons: readonly RuleResult[] = output.ruleIds.map((rule) => ({
       rule,
@@ -216,15 +230,49 @@ export function createSealedPolicyProvider(config: SealedProviderConfig): Policy
   });
 }
 
+interface Asked {
+  readonly request: ActionRequest;
+  readonly state: AgentState;
+  readonly decidedAt: number;
+  readonly disclosure: Disclosure;
+}
+
+async function attestationProblem(config: SealedProviderConfig, output: MxeEvaluationOutput, asked: Asked): Promise<string | null> {
+  const attestation = output.attestation;
+  if (config.onChain !== undefined) {
+    if (!isOnChainAttestation(attestation)) return "Expected an on-chain attestation from the live MXE";
+    if (attestation.programId !== config.onChain.programId || attestation.policy !== config.onChain.policy) {
+      return "The attestation points at a program or policy record other than the pinned ones";
+    }
+    const check = await checkOnChainDecision(
+      { commitment: config.commitment, ...asked, verdict: output.verdict, ruleIds: output.ruleIds },
+      { rpc: config.onChain.rpc, programId: config.onChain.programId, policy: config.onChain.policy, decision: attestation.decision, computationOffset: attestation.computationOffset },
+    );
+    return check.valid ? null : `The on-chain decision does not support this answer: ${check.detail.join("; ")}`;
+  }
+
+  const payload = attestedPayload(
+    { policyCommitment: output.policyCommitment, ...asked },
+    attestation.circuitId,
+    output.verdict,
+    output.ruleIds,
+  );
+  return verifyAttestation(payload as unknown as Canonicalisable, attestation, config.clusterPublicKey)
+    ? null
+    : "The MXE attestation does not verify under the pinned cluster key";
+}
+
 /**
- * Verify an MXE attestation. Exported because a third party needs it: it is the sealed-mode
- * substitute for re-running the engine.
+ * Verify a signed MXE attestation. Exported because a third party needs it: it is the
+ * sealed-mode substitute for re-running the engine. An on-chain attestation carries no
+ * signature to check here and never verifies; see verifySealedReceiptOnChain.
  */
 export function verifyAttestation(
   payload: Canonicalisable,
   attestation: MxeAttestation,
   clusterPublicKey: string,
 ): boolean {
+  if (isOnChainAttestation(attestation)) return false;
   try {
     const key = createPublicKey({
       key: Buffer.from(clusterPublicKey, "base64"),
