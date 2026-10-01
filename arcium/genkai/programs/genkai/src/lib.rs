@@ -338,23 +338,26 @@ pub struct Evaluate<'info> {
     pub arcium_program: Program<'info, Arcium>,
 }
 
+/// Accounts are boxed: the callback also verifies a BLS signature, and with the cluster, MXE and
+/// decision accounts deserialized onto the stack the SBF runtime runs out of frame space
+/// ("exceeded max BPF to BPF call depth").
 #[callback_accounts("evaluate_policy")]
 #[derive(Accounts)]
 pub struct EvaluatePolicyCallback<'info> {
     pub arcium_program: Program<'info, Arcium>,
     #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_EVALUATE_POLICY))]
-    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
     #[account(address = derive_mxe_pda!())]
-    pub mxe_account: Account<'info, MXEAccount>,
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
     /// CHECK: address is validated by the Arcium program; verify_output reads slot data from it.
     pub computation_account: UncheckedAccount<'info>,
     #[account(address = derive_cluster_pda!(mxe_account))]
-    pub cluster_account: Account<'info, Cluster>,
+    pub cluster_account: Box<Account<'info, Cluster>>,
     #[account(address = ::arcium_anchor::solana_instructions_sysvar::ID)]
     /// CHECK: instructions_sysvar, checked by the account constraint
     pub instructions_sysvar: UncheckedAccount<'info>,
     #[account(mut)]
-    pub decision: Account<'info, DecisionRecord>,
+    pub decision: Box<Account<'info, DecisionRecord>>,
 }
 
 #[init_computation_definition_accounts("evaluate_policy", payer)]
