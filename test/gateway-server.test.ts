@@ -126,7 +126,10 @@ test("administration needs an admin key, and an agent key is not one", async () 
 
   const listed = await call("GET", "/v1/agents/desk-bot/keys", { token: admin });
   assert.equal(listed.data.length, 1);
-  assert.equal(JSON.stringify(listed.data).includes(key.data.token.split("_")[2]), false, "a listing never shows a secret");
+  // The secret is base64url and may itself contain "_", so take all 43 characters, not a split.
+  const secret = /^gk_[0-9a-f]{12}_([A-Za-z0-9_-]{43})$/.exec(key.data.token)?.[1] ?? "";
+  assert.equal(secret.length, 43);
+  assert.equal(JSON.stringify(listed.data).includes(secret), false, "a listing never shows a secret");
 });
 
 test("an agent's decisions are enforced against a ledger it cannot write", async () => {
