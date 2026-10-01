@@ -6,6 +6,7 @@
  *   genkai verify <receipt.json> --policy p | --trust t [--previous <hash>]
  *   genkai verify-chain <receipts.json> --policy p | --trust t
  *   genkai verify-execution <receipt.json> --rpc <url>
+ *   genkai verify-onchain <receipt.json> --decision <address> --program <id> --rpc <url>
  *   genkai serve [--port 8787] [--host 127.0.0.1] [--trust-proxy]
  *   genkai demo [--out dir] [--devnet --keypair file [--rpc url]]
  *
@@ -23,6 +24,7 @@ import { handleVerifyChain, handleVerifyReceipt, type VerificationData } from ".
 import { createVerifierServer } from "../server/verifier-server.ts";
 import { createRpcClient } from "../solana/rpc.ts";
 import { verifyExecution } from "../solana/executor.ts";
+import { verifyOnChainDecision } from "../mxe/onchain.ts";
 import { keypairFromSolanaSecretKey, solanaAddress, solanaSecretKey } from "../solana/keys.ts";
 import { UsageError, readJsonFile, writeSecretFile } from "./files.ts";
 import { runDemo } from "./demo.ts";
@@ -103,6 +105,24 @@ const commands: Record<string, (argv: readonly string[]) => Promise<number> | nu
     const result = await verifyExecution(receipt, createRpcClient({ endpoint: values.rpc }));
     out(result.executed ? `EXECUTED at slot ${result.slot}` : `NOT EXECUTED: ${result.failure}`);
     return result.executed ? 0 : 1;
+  },
+
+  async "verify-onchain"(argv) {
+    const { values, positionals } = parse(argv, { decision: { type: "string" }, program: { type: "string" }, rpc: { type: "string" } });
+    if (!values.decision || !values.program || !values.rpc) throw new UsageError("Needs --decision, --program and --rpc");
+    const receipt = parseSignedReceipt(readJsonFile(positional(positionals, 0, "receipt.json")), "receipt");
+    const result = await verifyOnChainDecision(receipt, {
+      rpc: createRpcClient({ endpoint: values.rpc }),
+      programId: values.program,
+      decision: values.decision,
+    });
+    if (result.valid) {
+      out(`VALID (on-chain): the cluster recorded this verdict at slot ${result.decidedSlot}`);
+      return 0;
+    }
+    out(`INVALID (on-chain): ${result.failures.join(", ")}`);
+    for (const d of result.detail) out(`  - ${d}`);
+    return 1;
   },
 
   serve(argv) {
