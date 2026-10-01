@@ -22,6 +22,19 @@ The localnet suite runs the following checks against the program:
 - It checks that only the policy authority can evaluate, so the policy cannot
   be probed as an oracle.
 
+## Devnet
+
+```bash
+./scripts/deploy-devnet.sh ../../sealed-secret-devnet.json
+```
+
+This builds with `--features offchain-circuit`. The computation definition then
+points at `circuits/evaluate_policy.arcis` through a tag-pinned URL, and Arx
+nodes check the download against the hash compiled into the program. The script
+then runs `arcium deploy` on cluster 456, registers the circuit, and stages and
+activates the encrypted policy. Finally it writes `deployments/devnet.json`,
+which `genkai demo --live` and the verifiers read.
+
 ## Layout
 
 | Path | Purpose |

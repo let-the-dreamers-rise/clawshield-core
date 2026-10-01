@@ -81,8 +81,22 @@ exactly what the policy saw.
 **Sealed** (`verifySealedReceipt`, against pinned public values): operator signature, commitment
 equality, an attestation from the pinned circuit under the pinned cluster key over the exact
 verdict, rule ids, request, state and disclosure mode, no leaked reason text, chain linkage, and
-the bound transaction. Then `verifyOnChainDecision` confirms against Solana that the cluster
-recorded that verdict, for those request fields, against a PolicyRecord with that commitment.
+the bound transaction.
+
+**Sealed, live** (`verifySealedReceiptOnChain`, against pinned program id and PolicyRecord
+address): everything above except the signature, which the live MXE does not produce. Its
+attestation is a pointer, and the evidence is the `DecisionRecord` that the GENKAI program wrote
+only after Arcium verified the cluster's signature over the output. The verifier reads it over
+RPC and requires the following:
+
+- the pinned program owns it
+- it was decided against the pinned policy record
+- it belongs to the named computation
+- it holds this exact request
+- it carries this verdict and rule mask
+- it records this disclosure mode
+
+Without RPC access the same receipt reports `attestation_unchecked`, never valid.
 
 **Execution** (`verifyExecution`): whether the transfer landed is a fact the chain records, not
 an operator claim. The verifier fetches the transaction by the id the receipt binds and checks
@@ -93,8 +107,9 @@ the on-chain bytes hash to the bound message.
 `arcium/genkai` is an Arcium 0.15 / Anchor 1.x workspace.
 
 - **`encrypted-ixs/src/lib.rs`** - `evaluate_policy`: every rule evaluated on every call, no
-  control flow on a secret, revealing only a verdict code and an 18-bit rule mask. It mirrors
-  `src/mxe/circuit.ts` rule for rule.
+  control flow on a secret, revealing only a verdict code and an 18-bit rule mask. With
+  verdict-only disclosure, the circuit itself reveals a zero mask, so the public record cannot
+  leak which limit bound. It mirrors `src/mxe/circuit.ts` rule for rule.
 - **`programs/genkai/src/lib.rs`** - a policy registry and decision log. The operator encrypts
   the 87-field policy under a one-time x25519 key shared with the MXE, stages it in order in
   transaction-sized chunks, and activates it, after which it is immutable. `evaluate` is
@@ -102,7 +117,15 @@ the on-chain bytes hash to the bound message.
   with - and records the plaintext request fields in a `DecisionRecord`. The callback runs only
   if `verify_output` accepts the cluster's signature, and writes the verdict and mask.
 - **`tests/genkai.ts`** - runs fixture requests through a live localnet cluster and requires
-  every on-chain verdict and mask to equal the TypeScript model's.
+  every on-chain verdict and mask to equal the TypeScript model's (10/10, including a
+  verdict-only decision).
+- **`circuits/evaluate_policy.arcis`** - the 2.8 MB circuit, too large to store on chain
+  economically. On devnet the computation definition points at this file through a tag-pinned
+  URL. Arx nodes check it against the SHA-256 that `circuit_hash!` compiles into the program.
+- **`src/mxe/arcium.ts`** (in the TypeScript core) - the live `MxeClient`. It has no Arcium SDK
+  dependency: it derives the Arcium accounts itself, sends `evaluate`, waits for the callback,
+  and returns the recorded verdict. A computation the cluster aborts surfaces as a timeout,
+  never as a default verdict.
 
 The argument that a sealed decision equals the plaintext one is a chain of three links, each
 tested: the engine and the circuit model agree on **20,000 seeded random cases** with identical
@@ -135,6 +158,15 @@ The test suite is built around attacks, not the happy path. Among them:
 - an adapter asked to sign for an account whose key it does not hold
 - associated token accounts are derived from owners, never accepted from the caller, so an agent
   cannot name an allowlisted owner and an attacker-controlled token account
+- a look-alike PolicyRecord registered under the same public commitment over a permissive policy
+  is caught, because live trust pins the record's address and not just the commitment
+- a cluster output written into a different decision's record is refused by the callback,
+  which binds output to its own computation account
+
+What the commitment does not prove: that the ciphertext on chain encrypts the committed policy.
+That link rests on the operator. The operator can open it to an auditor by revealing the policy,
+the salt and the one-time encryption key, which lets the auditor re-encrypt and compare. The
+setup script does not keep that key, so opening it is a deliberate choice.
 
 Other properties worth knowing: the sealed commitment is **salted** (risk limits are low-entropy
 and an unsalted hash is brute-forceable); RPC responses are validated before they are believed
@@ -146,7 +178,7 @@ client, never returns stack traces and serves its page under a hash-based CSP.
 Requires Node 22+.
 
 ```bash
-npm test                    # 128 tests
+npm test                    # 141 tests
 npm run test:coverage       # gated at 80% lines
 npm run demo                # five treasury proposals, plaintext and sealed, receipts in demo-out/
 npm run serve               # hosted verifier on http://127.0.0.1:8787
@@ -158,8 +190,13 @@ npm run genkai -- seal policy.json sealed-secret.json
 npm run genkai -- verify receipt.json --policy policy.json
 npm run genkai -- verify-chain receipts.json --trust trust.json
 npm run genkai -- verify-execution receipt.json --rpc https://api.devnet.solana.com
-npm run genkai -- verify-onchain receipt.json --decision <address> --program <id> --rpc <url>
+npm run genkai -- verify-onchain receipt.json --decision <address> --program <id> --rpc <url> --policy-record <address>
 npm run genkai -- demo --devnet --keypair vault.keypair.json
+
+# Against a deployed GENKAI program: sealed decisions made by the Arcium cluster
+npm run genkai -- demo --live arcium/genkai/deployments/devnet.json --authority authority.json
+npm run genkai -- verify-chain demo-out/sealed/receipts.json --trust demo-out/sealed/trust.json --rpc https://api.devnet.solana.com
+npm run genkai -- serve --rpc https://api.devnet.solana.com
 ```
 
 The demo's output is what an operator would publish: `plaintext/` holds receipts and the policy,
@@ -172,24 +209,32 @@ Verifier API: `POST /v1/receipts/verify` with `{ receipt, policy }` or `{ receip
 ### Arcium workspace
 
 ```bash
-cd arcium/genkai
-node --experimental-strip-types ../../scripts/arcium-fixtures.ts   # from the repo root
-arcium build
-arcium test        # localnet cluster in Docker
+node --experimental-strip-types scripts/arcium-fixtures.ts         # from the repo root
+cd arcium/genkai && ./scripts/test-localnet.sh                       # localnet cluster in Docker
 ```
+
+Devnet (Arcium cluster 456). The deployer needs about 7 devnet SOL:
+
+```bash
+node --experimental-strip-types scripts/seal-for-chain.ts --demo sealed-secret-devnet.json   # SECRET
+cd arcium/genkai && ./scripts/deploy-devnet.sh ../../sealed-secret-devnet.json
+```
+
+The deploy script refuses to spend anything unless the built, committed and hosted circuits are
+byte-identical. It writes `deployments/devnet.json`, which holds public facts only.
 
 ## Layout
 
 ```
 src/policy/        engine, rules, the plaintext/sealed PolicyProvider seam
 src/receipt/       canonical form, signing, plaintext and sealed verifiers, transaction binding
-src/mxe/           MXE boundary, fixed-width encoding, circuit model, stub, on-chain records
+src/mxe/           MXE boundary, encoding, circuit model, stub, live Arcium client, on-chain records
 src/solana/        base58, curve, PDAs, instructions, messages, signing, adapter, RPC, executor
 src/io/            strict JSON and schema validation for anything read from outside
 src/server/        hosted verifier, handlers, rate limiting, browser page
 src/cli/           genkai command line and the demo
-arcium/genkai/     Arcis circuit, Anchor program, localnet test
-scripts/           fixture generation for the on-chain test
+arcium/genkai/     Arcis circuit, Anchor program, localnet test, devnet deployment
+scripts/           fixture generation and policy sealing for the on-chain program
 ```
 
 ## Status and roadmap
@@ -197,14 +242,16 @@ scripts/           fixture generation for the on-chain test
 Done: policy engine and receipts; Solana wire format verified byte for byte against
 `@solana/web3.js`; real transaction signing bound into receipts; RPC client, broadcast,
 confirmation and on-chain execution checks; sealed verification and verdict-only disclosure; the
-fixed-width encoding and circuit model; the Arcis circuit and Anchor program; on-chain decision
-verification; the hosted verifier; the CLI and demo; CI on Node 22 and 24.
+fixed-width encoding and circuit model; the Arcis circuit and Anchor program, passing on a
+localnet cluster; the live `MxeClient`, with receipts that name their DecisionRecord; on-chain
+verification in the library, the CLI and the hosted verifier; the CLI and demo; CI on Node 22
+and 24.
 
 Next:
 
-- Devnet deployment of the GENKAI program and an `MxeClient` that queues `evaluate` and maps the
-  `DecisionRecord` into the receipt, replacing the stub on the sealed path
-- Receipts that name their DecisionRecord directly, so `verify-onchain` needs no extra argument
+- Devnet deployment: tooling done and the circuit hosted, waiting on deployer funding
+- Make the program immutable once deployed, so the circuit pinned in its computation definition
+  cannot be swapped by an upgrade
 - Circle Developer Controlled Wallets and ERC-4337 adapters; MCP transport
 - On-chain receipt anchoring
 
