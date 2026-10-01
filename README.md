@@ -14,8 +14,36 @@ because a supply-chain compromise anywhere on the path from decision to signatur
 invalidate every receipt ever issued.
 
 ```
-128 tests  |  96% line coverage  |  0 runtime dependencies  |  tsc --strict clean
+177 tests  |  96% line coverage  |  0 runtime dependencies  |  tsc --strict clean
 ```
+
+## Live on Solana devnet
+
+**Verify it yourself: [genkai-inky.vercel.app](https://genkai-inky.vercel.app).** One click checks
+five decisions the Arcium cluster took on devnet, in your browser, against the records on chain,
+and shows a forged approval being caught.
+
+| | |
+|---|---|
+| GENKAI program | [`AwiVMGyi8P9mN6ig5FA74CTS6sncc7bbh8CNAxKXUERk`](https://explorer.solana.com/address/AwiVMGyi8P9mN6ig5FA74CTS6sncc7bbh8CNAxKXUERk?cluster=devnet) |
+| Sealed PolicyRecord | [`4GAuWFqwJLhEqLAguJV3cdrwYWHc3yKP4QnYVkwWQRKL`](https://explorer.solana.com/address/4GAuWFqwJLhEqLAguJV3cdrwYWHc3yKP4QnYVkwWQRKL?cluster=devnet) |
+| Policy commitment | `d5987b971868601cf6845a3b9b3a95fad90c056a306e3addc45d43b540890df1` |
+| Arcium cluster | offset 456, circuit `genkai.policy.v2` |
+| Decisions by the cluster | [allow](https://explorer.solana.com/address/9dkMNMbZ6chVHSUyz2t3mkV7awHGce4TJcjJyUGTVjgG?cluster=devnet), [deny](https://explorer.solana.com/address/FZFe6LMXEuW8CisUBeW31o2pFDAZu9yoFBXVanJh2bYF?cluster=devnet), [escalate](https://explorer.solana.com/address/GAiM2QxVfERnN9rVxDEdWMb6AKq1gRwv1UvvSJSg5PAs?cluster=devnet), [deny](https://explorer.solana.com/address/AiaEEa4CzS48dq5hiyKMzcEo4j8oxcbFTpAUiRqP3TZa?cluster=devnet), [allow](https://explorer.solana.com/address/9Nvr6wtxsmTYrMgmregzWZRtbgkYA4h3H8CT4oDK2uEb?cluster=devnet) |
+| Hosted verification API | `POST https://genkai-inky.vercel.app/v1/chains/verify` ([docs/API.md](docs/API.md)) |
+
+From a clone, the same check runs from files and RPC alone:
+
+```bash
+npm run genkai -- verify-chain examples/devnet/sealed-receipts.json \
+  --trust examples/devnet/trust.json --rpc https://api.devnet.solana.com
+# VALID (sealed)
+```
+
+`examples/devnet/` also holds the same five requests decided in plaintext, with the policy, so
+the two modes can be compared side by side. The demo deliberately uses one treasury policy for
+both; the salt behind the on-chain commitment was never published, so nothing ties the sealed
+record to that file. A real deployment publishes the commitment and nothing else.
 
 ---
 
@@ -102,6 +130,44 @@ Without RPC access the same receipt reports `attestation_unchecked`, never valid
 an operator claim. The verifier fetches the transaction by the id the receipt binds and checks
 the on-chain bytes hash to the bound message.
 
+### Where verification runs
+
+- **In the browser** ([web/](web/)): the page bundles the same parsers and verifiers as the CLI.
+  `node:crypto` is swapped for a verify-only shim over audited
+  [`@noble/curves`](https://github.com/paulmillr/noble-curves) and
+  [`@noble/hashes`](https://github.com/paulmillr/noble-hashes); nothing in it can sign. The core
+  itself keeps zero runtime dependencies. A test runs the bundle in a bare V8 context and
+  requires answers identical to Node's on the real devnet receipts, including a forged one.
+- **As a hosted API**: `genkai serve`, or the same handler deployed as Vercel functions by
+  `npm run build:web`.
+- **From the CLI**, offline or with `--rpc`.
+
+## The gateway: authority with authentication and a ledger
+
+`genkai gateway` is the production entry point for agents: an HTTP service that owns the vault
+key, the ledger and the receipt chain, so an agent can do exactly one thing, ask.
+
+- **API keys, not trust.** Keys are `gk_<id>_<secret>`; only a SHA-256 of the secret is stored
+  and it is compared in constant time. An admin key administers; an agent key decides for its
+  own agent only. An admin cannot decide, so every receipt names an agent identity.
+- **A ledger the agent cannot write.** The agent sends a destination and an amount. The vault,
+  cluster, clock and spending state come from the gateway's SQLite ledger: the spend window
+  rolls on the server clock, every decision counts as a call, and only an allow spends.
+- **Durable before it acts.** Each decision is committed (receipt plus ledger advance) in one
+  transaction under an optimistic version check and a per-agent queue, and only then is a
+  transaction broadcast. Ten concurrent requests against a window with room for two are allowed
+  exactly twice.
+- **Operable.** A kill switch per agent, a drawdown halt, key revocation that takes effect on
+  the next request, an append-only audit log, per-client and per-key rate limits, JSON request
+  logs that never contain a credential or a body, and `/healthz` and `/readyz`.
+- **Plaintext or sealed.** Point it at a policy file, or at the devnet deployment manifest plus
+  the policy authority's key and the cluster decides every request.
+
+It ships as a container image (`ghcr.io/let-the-dreamers-rise/genkai-gateway`), non-root, on a
+read-only root filesystem, with the ledger on a volume. It is self-hosted by design: it holds
+the key that signs transfers. See [docs/OPERATIONS.md](docs/OPERATIONS.md) and
+[docs/API.md](docs/API.md).
+
 ## The Arcium circuit and program
 
 `arcium/genkai` is an Arcium 0.15 / Anchor 1.x workspace.
@@ -171,17 +237,32 @@ setup script does not keep that key, so opening it is a deliberate choice.
 Other properties worth knowing: the sealed commitment is **salted** (risk limits are low-entropy
 and an unsalted hash is brute-forceable); RPC responses are validated before they are believed
 and only transport failures are retried; the public verifier bounds bodies, rate-limits per
-client, never returns stack traces and serves its page under a hash-based CSP.
+client, never returns stack traces and serves its page under a strict CSP with no inline code.
+The gateway refuses any request field it does not know, so an agent cannot slip in `from`,
+`state` or `requestedAt`. The threat model is in [SECURITY.md](SECURITY.md).
 
 ## Use it
 
 Requires Node 22+.
 
 ```bash
-npm test                    # 141 tests
+npm test                    # 177 tests
 npm run test:coverage       # gated at 80% lines
 npm run demo                # five treasury proposals, plaintext and sealed, receipts in demo-out/
 npm run serve               # hosted verifier on http://127.0.0.1:8787
+npm run build:web           # browser verifier + API functions as Vercel Build Output
+npm run preview:web         # serve that build locally on http://127.0.0.1:8790
+```
+
+The gateway, from source or as a container:
+
+```bash
+GENKAI_VAULT_KEY_FILE=vault.keypair.json GENKAI_POLICY_FILE=examples/devnet/policy.json \
+  npm run genkai -- gateway --db data/genkai.db
+npm run genkai -- gateway-admin create-admin-key --db data/genkai.db
+
+docker compose up -d        # see docker-compose.yml
+docker build -t genkai-gateway:test . && scripts/smoke-gateway.sh   # a full decision cycle
 ```
 
 ```bash
@@ -231,10 +312,14 @@ src/receipt/       canonical form, signing, plaintext and sealed verifiers, tran
 src/mxe/           MXE boundary, encoding, circuit model, stub, live Arcium client, on-chain records
 src/solana/        base58, curve, PDAs, instructions, messages, signing, adapter, RPC, executor
 src/io/            strict JSON and schema validation for anything read from outside
-src/server/        hosted verifier, handlers, rate limiting, browser page
+src/server/        hosted verifier, handlers, shared HTTP plumbing, rate limiting
+src/gateway/       authenticated gateway: keys, roles, SQLite ledger, routes, config, boot
 src/cli/           genkai command line and the demo
+web/               browser verifier, @noble crypto shim, Vercel function entry
 arcium/genkai/     Arcis circuit, Anchor program, localnet test, devnet deployment
-scripts/           fixture generation and policy sealing for the on-chain program
+examples/devnet/   the devnet run: sealed and plaintext receipts, trust anchor, policy
+scripts/           site build and preview, gateway smoke test, fixtures, policy sealing
+docs/              architecture, API, operations
 ```
 
 ## Status and roadmap
@@ -243,18 +328,22 @@ Done: policy engine and receipts; Solana wire format verified byte for byte agai
 `@solana/web3.js`; real transaction signing bound into receipts; RPC client, broadcast,
 confirmation and on-chain execution checks; sealed verification and verdict-only disclosure; the
 fixed-width encoding and circuit model; the Arcis circuit and Anchor program, passing on a
-localnet cluster; the live `MxeClient`, with receipts that name their DecisionRecord; on-chain
-verification in the library, the CLI and the hosted verifier; the CLI and demo; CI on Node 22
-and 24.
+localnet cluster; **the program, MXE and sealed policy deployed on devnet, with decisions taken
+by Arcium cluster 456**; the live `MxeClient`, with receipts that name their DecisionRecord;
+on-chain verification in the library, the CLI, the hosted API and the browser; **the
+authenticated gateway with its SQLite ledger, shipped as a container image**; **the public
+verifier site and API on Vercel**; CI on Node 22 and 24, and an image pipeline that smoke-tests
+before it publishes.
 
 Next:
 
-- Devnet deployment: tooling done and the circuit hosted, waiting on deployer funding
-- Make the program immutable once deployed, so the circuit pinned in its computation definition
-  cannot be swapped by an upgrade
-- Circle Developer Controlled Wallets and ERC-4337 adapters; MCP transport
-- On-chain receipt anchoring
+- Make the program immutable after an external review, so the circuit pinned in its computation
+  definition cannot be swapped by an upgrade (`solana program set-upgrade-authority --final`;
+  irreversible, so it is deliberately not automated)
+- Mainnet-beta, once Arcium's mainnet clusters are open to this program
+- Circle Developer Controlled Wallets and ERC-4337 adapters; an MCP transport for the gateway
+- On-chain receipt anchoring, so a receipt chain's head is timestamped by the cluster
 
 ## Licence
 
-MIT
+MIT. See [LICENSE](LICENSE).
