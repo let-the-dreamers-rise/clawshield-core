@@ -1,7 +1,10 @@
 //! GENKAI policy circuits.
 //!
 //! One confidential instruction, evaluate_policy: it evaluates a sealed policy against a
-//! plaintext request and reveals only a verdict code and a bitmask of the rules that fired.
+//! plaintext request and reveals only a verdict code and a bitmask of the rules that fired -
+//! or, when the caller asks for verdict-only disclosure, the verdict and a zero mask. The mask
+//! is computed either way and the choice is a plaintext input, so the two modes cost the same
+//! and the zero mask carries no information about the policy.
 //!
 //! The policy arrives as Enc<Shared, SealedPolicy>, read straight from the on-chain PolicyRecord.
 //! It is encrypted under a one-time x25519 key the operator generates for the upload and then
@@ -111,7 +114,8 @@ mod circuits {
     }
 
     /// Returns (verdict, mask): verdict 0 allow, 1 deny, 2 escalate; bit i of mask is rule i in
-    /// RULE_ORDER (src/mxe/circuit.ts), bit 17 being escalation.
+    /// RULE_ORDER (src/mxe/circuit.ts), bit 17 being escalation. With disclose_rules false the
+    /// mask is 0, so the revealed output names the verdict and nothing about which limit bound.
     #[instruction]
     pub fn evaluate_policy(
         policy: Enc<Shared, SealedPolicy>,
@@ -132,6 +136,7 @@ mod circuits {
         spent_in_window: u64,
         calls_in_window: u64,
         drawdown_from_peak: u64,
+        disclose_rules: bool,
     ) -> (u8, u32) {
         let p = policy.to_arcis();
 
@@ -208,7 +213,8 @@ mod circuits {
         } else {
             0u8
         };
-        let mask = deny_mask | bit(escalates, 17);
+        let fired = deny_mask | bit(escalates, 17);
+        let mask = if disclose_rules { fired } else { 0u32 };
 
         (verdict.reveal(), mask.reveal())
     }

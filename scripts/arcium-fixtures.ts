@@ -30,7 +30,15 @@ const AT = Date.UTC(2026, 9, 1, 12, 0, 0);
 
 const fresh: AgentState = { spentInWindow: 0n, windowStartedAt: AT, callsInWindow: 0, drawdownFromPeak: 0n, revoked: false };
 
-const CASES: readonly { intent: string; to: string; lamports: bigint; state?: Partial<AgentState>; programId?: string; mint?: string }[] = [
+const CASES: readonly {
+  intent: string;
+  to: string;
+  lamports: bigint;
+  state?: Partial<AgentState>;
+  programId?: string;
+  mint?: string;
+  verdictOnly?: boolean;
+}[] = [
   { intent: "in policy: pay vendor A", to: VENDOR_A, lamports: 10_000_000n },
   { intent: "counterparty not allowlisted", to: STRANGER, lamports: 5_000_000n },
   { intent: "above the escalation threshold", to: VENDOR_B, lamports: 30_000_000n },
@@ -38,6 +46,7 @@ const CASES: readonly { intent: string; to: string; lamports: bigint; state?: Pa
   { intent: "window already nearly spent", to: VENDOR_B, lamports: 15_000_000n, state: { spentInWindow: 90_000_000n } },
   { intent: "rate limited and revoked", to: VENDOR_A, lamports: 1_000n, state: { callsInWindow: 10, revoked: true } },
   { intent: "wrong program and mint", to: VENDOR_A, lamports: 1_000n, programId: TOKEN_PROGRAM_ID, mint: USDC_MAINNET_MINT },
+  { intent: "verdict only: over the cap, rules withheld", to: VENDOR_A, lamports: 200_000_000n, verdictOnly: true },
 ];
 
 const fields = (r: EncodedRequest) => ({
@@ -81,11 +90,22 @@ const requests = CASES.map((c) => {
   );
   const encoded = encodeRequest(request, { ...fresh, ...c.state });
   const out = evaluateCircuit(policy, encoded);
-  return { intent: c.intent, fields: fields(encoded), expected: { verdict: out.verdict, mask: out.mask, verdictName: verdictOf(out), rules: ruleIdsOf(out) } };
+  const discloseRules = c.verdictOnly !== true;
+  return {
+    intent: c.intent,
+    fields: fields(encoded),
+    discloseRules,
+    expected: {
+      verdict: out.verdict,
+      mask: discloseRules ? out.mask : 0,
+      verdictName: verdictOf(out),
+      rules: discloseRules ? ruleIdsOf(out) : [],
+    },
+  };
 });
 
 const fixture = {
-  circuitId: "genkai.policy.v1",
+  circuitId: "genkai.policy.v2",
   policyId: DEMO_POLICY.policyId,
   commitment: sealedCommitment(DEMO_POLICY, FIXTURE_SALT),
   policyFields: flat.map((x) => x.toString()),

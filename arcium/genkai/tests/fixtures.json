@@ -1,5 +1,5 @@
 {
-  "circuitId": "genkai.policy.v1",
+  "circuitId": "genkai.policy.v2",
   "policyId": "desk-alpha-treasury",
   "commitment": "26f0e8957787a1364e6a751b22750d960c7ecbae5ec4c4538a5cf71ba1a39313",
   "policyFields": [
@@ -113,6 +113,7 @@
         "callsInWindow": "0",
         "drawdownFromPeak": "0"
       },
+      "discloseRules": true,
       "expected": {
         "verdict": 0,
         "mask": 0,
@@ -143,6 +144,7 @@
         "callsInWindow": "0",
         "drawdownFromPeak": "0"
       },
+      "discloseRules": true,
       "expected": {
         "verdict": 1,
         "mask": 16,
@@ -173,6 +175,7 @@
         "callsInWindow": "0",
         "drawdownFromPeak": "0"
       },
+      "discloseRules": true,
       "expected": {
         "verdict": 2,
         "mask": 131072,
@@ -203,6 +206,7 @@
         "callsInWindow": "0",
         "drawdownFromPeak": "0"
       },
+      "discloseRules": true,
       "expected": {
         "verdict": 1,
         "mask": 24576,
@@ -234,6 +238,7 @@
         "callsInWindow": "0",
         "drawdownFromPeak": "0"
       },
+      "discloseRules": true,
       "expected": {
         "verdict": 1,
         "mask": 16384,
@@ -264,6 +269,7 @@
         "callsInWindow": "10",
         "drawdownFromPeak": "0"
       },
+      "discloseRules": true,
       "expected": {
         "verdict": 1,
         "mask": 1025,
@@ -295,6 +301,7 @@
         "callsInWindow": "0",
         "drawdownFromPeak": "0"
       },
+      "discloseRules": true,
       "expected": {
         "verdict": 1,
         "mask": 4288,
@@ -304,6 +311,35 @@
           "mint_not_allowed",
           "mint_cap_missing"
         ]
+      }
+    },
+    {
+      "intent": "verdict only: over the cap, rules withheld",
+      "fields": {
+        "toolId": "26965157196186361953687631272942359731",
+        "hasCounterparty": true,
+        "counterpartyId": "11038336395465507141484136921906519395",
+        "hasAmount": true,
+        "amountNegative": false,
+        "amountMagnitude": "200000000",
+        "isSolana": true,
+        "solanaValid": true,
+        "clusterId": "37921091810006288621423587907140399989",
+        "programId": "333574456676673463611143556258738026420",
+        "mintId": "279941530260053878299590288797301085880",
+        "minuteOfDay": 720,
+        "dayOfWeek": 4,
+        "revoked": false,
+        "spentInWindow": "0",
+        "callsInWindow": "0",
+        "drawdownFromPeak": "0"
+      },
+      "discloseRules": false,
+      "expected": {
+        "verdict": 1,
+        "mask": 0,
+        "verdictName": "deny",
+        "rules": []
       }
     }
   ]

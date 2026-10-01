@@ -49,6 +49,7 @@ interface Fixture {
   requests: {
     intent: string;
     fields: Record<string, string | number | boolean>;
+    discloseRules: boolean;
     expected: { verdict: number; mask: number; verdictName: string; rules: string[] };
   }[];
 }
@@ -143,7 +144,7 @@ describe("GENKAI", () => {
 
     const offset = new anchor.BN(randomBytes(8), "hex");
     await expectError(
-      program.methods.evaluate(offset, requestArgs(FIXTURE.requests[0].fields) as never)
+      program.methods.evaluate(offset, requestArgs(FIXTURE.requests[0].fields) as never, true)
         .accountsPartial(evaluateAccounts(offset)).rpc({ skipPreflight: false }),
       "PolicyNotActive",
     );
@@ -167,7 +168,7 @@ describe("GENKAI", () => {
     it(`decides on ciphertext: ${req.intent} -> ${req.expected.verdictName}`, async () => {
       const offset = new anchor.BN(randomBytes(8), "hex");
       await program.methods
-        .evaluate(offset, requestArgs(req.fields) as never)
+        .evaluate(offset, requestArgs(req.fields) as never, req.discloseRules)
         .accountsPartial({ authority: owner.publicKey, ...evaluateAccounts(offset) })
         .signers([owner])
         .rpc({ skipPreflight: true, commitment: "confirmed" });
@@ -178,6 +179,7 @@ describe("GENKAI", () => {
       expect(decision.status, `request ${i} not decided`).to.equal(1);
       expect(decision.verdict, req.intent).to.equal(req.expected.verdict);
       expect(decision.mask, req.intent).to.equal(req.expected.mask);
+      expect(decision.discloseRules, req.intent).to.equal(req.discloseRules);
       expect(decision.policy.toBase58()).to.equal(policyPda.toBase58());
     });
   }
@@ -188,7 +190,7 @@ describe("GENKAI", () => {
     await provider.connection.confirmTransaction(sig, "confirmed");
     const offset = new anchor.BN(randomBytes(8), "hex");
     await expectError(
-      program.methods.evaluate(offset, requestArgs(FIXTURE.requests[0].fields) as never)
+      program.methods.evaluate(offset, requestArgs(FIXTURE.requests[0].fields) as never, true)
         .accountsPartial({ authority: stranger.publicKey, ...evaluateAccounts(offset) })
         .signers([stranger]).rpc(),
       "NotAuthority",

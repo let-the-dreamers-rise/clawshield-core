@@ -26,8 +26,19 @@
 use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
 use arcium_client::idl::arcium::types::CallbackAccount;
+#[cfg(feature = "offchain-circuit")]
+use arcium_client::idl::arcium::types::{CircuitSource, OffChainCircuitSource};
+#[cfg(feature = "offchain-circuit")]
+use arcium_macros::circuit_hash;
 
 const COMP_DEF_OFFSET_EVALUATE_POLICY: u32 = comp_def_offset("evaluate_policy");
+
+/// Where Arx nodes fetch the circuit when it is not stored on chain. Pinned to a git tag, and
+/// the nodes check the download against circuit_hash!, so a changed file is refused rather
+/// than run.
+#[cfg(feature = "offchain-circuit")]
+pub const CIRCUIT_URL: &str =
+    "https://raw.githubusercontent.com/let-the-dreamers-rise/clawshield-core/circuit-evaluate-policy-v2/arcium/genkai/circuits/evaluate_policy.arcis";
 
 /// Number of encrypted scalars in a SealedPolicy; POLICY_FIELD_COUNT in src/mxe/encoding.ts.
 pub const POLICY_FIELDS: usize = 87;
@@ -56,7 +67,14 @@ pub mod genkai {
     use super::*;
 
     pub fn init_evaluate_policy_comp_def(ctx: Context<InitEvaluatePolicyCompDef>) -> Result<()> {
-        init_computation_def(ctx.accounts, None)?;
+        #[cfg(feature = "offchain-circuit")]
+        let source = Some(CircuitSource::OffChain(OffChainCircuitSource {
+            source: CIRCUIT_URL.to_string(),
+            hash: circuit_hash!("evaluate_policy"),
+        }));
+        #[cfg(not(feature = "offchain-circuit"))]
+        let source = None;
+        init_computation_def(ctx.accounts, source)?;
         Ok(())
     }
 
@@ -114,7 +132,14 @@ pub mod genkai {
         Ok(())
     }
 
-    pub fn evaluate(ctx: Context<Evaluate>, computation_offset: u64, request: RequestFields) -> Result<()> {
+    /// disclose_rules false asks the circuit for the verdict alone; the mask it reveals is then
+    /// zero, and the record says so, so a verifier can tell a withheld mask from an empty one.
+    pub fn evaluate(
+        ctx: Context<Evaluate>,
+        computation_offset: u64,
+        request: RequestFields,
+        disclose_rules: bool,
+    ) -> Result<()> {
         let (pubkey, nonce) = {
             let record = ctx.accounts.policy.load()?;
             require!(record.status == STATUS_ACTIVE, GenkaiError::PolicyNotActive);
@@ -131,6 +156,7 @@ pub mod genkai {
         decision.requested_slot = Clock::get()?.slot;
         decision.decided_slot = 0;
         decision.bump = ctx.bumps.decision;
+        decision.disclose_rules = disclose_rules;
 
         ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
         let args = ArgBuilder::new()
@@ -154,6 +180,7 @@ pub mod genkai {
             .plaintext_u64(request.spent_in_window)
             .plaintext_u64(request.calls_in_window)
             .plaintext_u64(request.drawdown_from_peak)
+            .plaintext_bool(disclose_rules)
             .build();
 
         queue_computation(
@@ -265,6 +292,8 @@ pub struct DecisionRecord {
     pub requested_slot: u64,
     pub decided_slot: u64,
     pub bump: u8,
+    /// false: verdict-only disclosure, and mask is 0 by construction rather than by outcome.
+    pub disclose_rules: bool,
 }
 
 #[derive(Accounts)]
