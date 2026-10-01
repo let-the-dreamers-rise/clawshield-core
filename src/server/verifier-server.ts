@@ -13,9 +13,8 @@
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { fromJson, toJson } from "../io/json.ts";
-import { SchemaError } from "../io/validate.ts";
 import { createRateLimiter, type RateLimitConfig } from "./rate-limit.ts";
+import { BASE_HEADERS as SHARED_HEADERS, HttpError, clientOf, readJsonBody, send, sendError } from "./http.ts";
 import { handleVerifyChain, handleVerifyReceipt, type HandlerContext } from "./handlers.ts";
 import type { RpcClient } from "../solana/rpc.ts";
 import { PAGE_CSP, PAGE_HTML } from "./page.ts";
@@ -30,20 +29,9 @@ export interface VerifierServerConfig {
   readonly rpc?: RpcClient;
 }
 
-class HttpError extends Error {
-  readonly status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
-
-const BASE_HEADERS = {
-  "x-content-type-options": "nosniff",
-  "referrer-policy": "no-referrer",
-  "cache-control": "no-store",
-  "access-control-allow-origin": "*",
-} as const;
+/** No credentials and no state, so any origin may call it. */
+const CORS = { "access-control-allow-origin": "*" } as const;
+const BASE_HEADERS = { ...SHARED_HEADERS, ...CORS } as const;
 
 const ROUTES: Readonly<Record<string, { readonly method: "GET" | "POST"; readonly handle?: (body: unknown, ctx: HandlerContext) => Promise<unknown> }>> = {
   "/": { method: "GET" },
@@ -52,45 +40,11 @@ const ROUTES: Readonly<Record<string, { readonly method: "GET" | "POST"; readonl
   "/v1/chains/verify": { method: "POST", handle: handleVerifyChain },
 };
 
-function send(res: ServerResponse, status: number, payload: { success: boolean; data: unknown; error: string | null }, extra: Record<string, string> = {}) {
-  const body = toJson(payload as never);
-  res.writeHead(status, { ...BASE_HEADERS, "content-type": "application/json; charset=utf-8", ...extra });
-  res.end(body);
-}
-
 /**
- * Read a bounded body. An oversized body is drained without being stored, so the client gets a
- * clean 413 instead of a reset connection, but only up to a hard cap: past that the socket is
- * destroyed rather than letting a client make the server read without limit.
+ * The request handler on its own, so it can run under node:http here or as a serverless
+ * function (see deploy/vercel), with identical behaviour.
  */
-async function readBody(req: IncomingMessage, limit: number): Promise<string> {
-  const drainCap = limit * 4;
-  if (Number(req.headers["content-length"] ?? 0) > drainCap) {
-    req.destroy();
-    throw new HttpError(413, `Body exceeds ${limit} bytes`);
-  }
-
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += (chunk as Buffer).length;
-    if (size > drainCap) {
-      req.destroy();
-      break;
-    }
-    if (size <= limit) chunks.push(chunk as Buffer);
-  }
-  if (size > limit) throw new HttpError(413, `Body exceeds ${limit} bytes`);
-  return Buffer.concat(chunks).toString("utf8");
-}
-
-function clientOf(req: IncomingMessage, trustProxy: boolean): string {
-  const forwarded = req.headers["x-forwarded-for"];
-  if (trustProxy && typeof forwarded === "string") return forwarded.split(",")[0]?.trim() || "unknown";
-  return req.socket.remoteAddress ?? "unknown";
-}
-
-export function createVerifierServer(config: VerifierServerConfig = {}): Server {
+export function createVerifierHandler(config: VerifierServerConfig = {}): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   const limit = config.maxBodyBytes ?? 1024 * 1024;
   const limiter = createRateLimiter(config.rateLimit ?? { capacity: 60, refillPerSecond: 1 });
   const log = config.log ?? ((line: string) => process.stderr.write(`${line}\n`));
@@ -98,7 +52,7 @@ export function createVerifierServer(config: VerifierServerConfig = {}): Server 
   async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const rate = limiter.take(clientOf(req, config.trustProxy ?? false));
     if (!rate.allowed) {
-      send(res, 429, { success: false, data: null, error: "Rate limit exceeded" }, { "retry-after": String(rate.retryAfterSeconds) });
+      send(res, 429, { success: false, data: null, error: "Rate limit exceeded" }, { ...CORS, "retry-after": String(rate.retryAfterSeconds) });
       return;
     }
 
@@ -111,7 +65,7 @@ export function createVerifierServer(config: VerifierServerConfig = {}): Server 
       return;
     }
     if (req.method !== route.method) {
-      send(res, 405, { success: false, data: null, error: `Use ${route.method}` }, { allow: route.method });
+      send(res, 405, { success: false, data: null, error: `Use ${route.method}` }, { ...CORS, allow: route.method });
       return;
     }
 
@@ -121,43 +75,29 @@ export function createVerifierServer(config: VerifierServerConfig = {}): Server 
       return;
     }
     if (path === "/healthz") {
-      send(res, 200, { success: true, data: { status: "ok" }, error: null });
+      send(res, 200, { success: true, data: { status: "ok", onChain: config.rpc !== undefined }, error: null }, CORS);
       return;
     }
 
-    if (!/^application\/json\b/i.test(req.headers["content-type"] ?? "")) {
-      throw new HttpError(415, "Content-Type must be application/json");
-    }
-    const text = await readBody(req, limit);
-    let body: unknown;
-    try {
-      body = fromJson(text);
-    } catch {
-      throw new HttpError(400, "Body is not valid JSON");
-    }
+    const body = await readJsonBody(req, limit);
     const data = route.handle ? await route.handle(body, { rpc: config.rpc }) : null;
-    send(res, 200, { success: true, data, error: null });
+    send(res, 200, { success: true, data, error: null }, CORS);
   }
 
-  const server = createServer((req, res) => {
-    route(req, res).catch((err: unknown) => {
-      if (res.headersSent) {
-        res.destroy();
-        return;
-      }
-      if (err instanceof HttpError) {
-        // A client that sent too much is not read to the end; the connection closes after this.
-        const extra: Record<string, string> = err.status === 413 ? { connection: "close" } : {};
-        send(res, err.status, { success: false, data: null, error: err.message }, extra);
-      } else if (err instanceof SchemaError) {
-        send(res, 400, { success: false, data: null, error: err.message });
-      } else {
+  return async (req, res) => {
+    try {
+      await route(req, res);
+    } catch (err) {
+      if (!sendError(res, err, CORS)) {
         log(`verifier: unexpected error on ${req.method} ${req.url}: ${err instanceof Error ? err.message : String(err)}`);
-        send(res, 500, { success: false, data: null, error: "Internal error" });
       }
-    });
-  });
+    }
+  };
+}
 
+export function createVerifierServer(config: VerifierServerConfig = {}): Server {
+  const handle = createVerifierHandler(config);
+  const server = createServer((req, res) => void handle(req, res));
   server.requestTimeout = 10_000;
   server.headersTimeout = 5_000;
   return server;
