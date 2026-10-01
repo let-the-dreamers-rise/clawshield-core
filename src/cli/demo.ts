@@ -217,7 +217,8 @@ export async function runDemo(options: DemoOptions): Promise<{ readonly plaintex
   const plainCheck = verifyChain(plainReceipts, () => DEMO_POLICY);
   const sealedCheck = await setup.verify(sealedReceipts);
 
-  log(`\nGENKAI demo (${options.rpc ? "devnet" : "offline"}) - vault ${address}\n`);
+  const sealedMode = options.live ? `Arcium cluster ${options.live.deployment.clusterOffset} on ${options.live.deployment.cluster}` : "stub MXE";
+  log(`\nGENKAI demo (plaintext ${options.rpc ? "on devnet" : "offline"}, sealed by ${sealedMode}) - vault ${address}\n`);
   log(`  #  ${"proposal".padEnd(34)}${"SOL".padEnd(8)}${"plaintext".padEnd(11)}sealed`);
   PROPOSALS.forEach((p, i) => {
     log(`  ${i + 1}  ${p.intent.padEnd(34)}${sol(p.lamports).padEnd(8)}${(plain[i]?.verdict ?? "-").padEnd(11)}${sealed[i]?.verdict ?? "-"}`);

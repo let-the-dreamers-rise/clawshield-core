@@ -1,0 +1,32 @@
+{
+  "policyId": "desk-alpha-treasury",
+  "version": 1,
+  "allowedTools": [
+    "solana_transfer"
+  ],
+  "counterpartyAllowlist": [
+    "7VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE",
+    "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+  ],
+  "allowedClusters": [
+    "devnet"
+  ],
+  "allowedPrograms": [
+    "11111111111111111111111111111111"
+  ],
+  "allowedMints": [
+    "So11111111111111111111111111111111111111112"
+  ],
+  "maxAmountPerMint": {
+    "So11111111111111111111111111111111111111112": {
+      "$bigint": "50000000"
+    }
+  },
+  "maxAmountPerWindow": {
+    "$bigint": "100000000"
+  },
+  "maxCallsPerWindow": 10,
+  "escalateAboveAmount": {
+    "$bigint": "20000000"
+  }
+}

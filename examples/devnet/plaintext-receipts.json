@@ -1,0 +1,302 @@
+[
+  {
+    "body": {
+      "receiptId": "470c91a2d76abd357174846b14677069",
+      "schemaVersion": 1,
+      "policyHash": "e03cf747d80826ea68d820c4d85ee48484af922b0b5afe4f9f63dd5f61299fb8",
+      "request": {
+        "agentId": "desk-bot",
+        "tool": "solana_transfer",
+        "counterparty": "7VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE",
+        "amount": {
+          "$bigint": "10000000"
+        },
+        "asset": "So11111111111111111111111111111111111111112",
+        "requestedAt": 1790894015079,
+        "params": {
+          "chain": "solana",
+          "cluster": "devnet",
+          "programId": "11111111111111111111111111111111",
+          "decimals": 9,
+          "from": "CaDcnU7SqiiKd9YQxowvHBzwX7tkTm3BmS6Bb2zMntaT"
+        }
+      },
+      "state": {
+        "spentInWindow": {
+          "$bigint": "0"
+        },
+        "windowStartedAt": 1790894015079,
+        "callsInWindow": 0,
+        "drawdownFromPeak": {
+          "$bigint": "0"
+        },
+        "revoked": false
+      },
+      "decision": {
+        "verdict": "allow",
+        "reasons": [
+          {
+            "rule": "all_checks_passed",
+            "verdict": "allow",
+            "reason": "No rule objected"
+          }
+        ],
+        "policyId": "desk-alpha-treasury",
+        "policyVersion": 1,
+        "decidedAt": 1790894015079
+      },
+      "modelReasoning": "Pay vendor A invoice #1042",
+      "rulesetVersion": 1,
+      "transaction": {
+        "signature": "5og7krmrP9Jg6ZRtqUM7GifqpVZriKxNbxghj2tLCR91tquJVP5izakoGLWF7CB2EPJRMb5tUM7j9Yk4JjhDq1bF",
+        "messageSha256": "55fb2045efed83f723eb839962f869677982687a9262235edfb8f057902bb3b7",
+        "recentBlockhash": "EkSnNWid2cvwEVnVx9aBqawnmiCNiDgp3gUdkDPTKN1N"
+      },
+      "outcome": {
+        "executed": false
+      },
+      "previousReceiptHash": null
+    },
+    "signature": "6S/SycieMThkPBGWO5svfuE6Ya7fSL9QuHPzX6J8DaSoM1PlwfY0DDT02Za2x6mMrRVev3rIp5vhrujGUiQdDA==",
+    "publicKey": "MCowBQYDK2VwAyEAq/L9KuxihDwl/4R3BqlF4kEjOVRScr2C+OjzClvbT+g=",
+    "algorithm": "ed25519"
+  },
+  {
+    "body": {
+      "receiptId": "c2157ea50e5464f63ad88179cdb3d0f7",
+      "schemaVersion": 1,
+      "policyHash": "e03cf747d80826ea68d820c4d85ee48484af922b0b5afe4f9f63dd5f61299fb8",
+      "request": {
+        "agentId": "desk-bot",
+        "tool": "solana_transfer",
+        "counterparty": "GsbwXfJraMomNxBcjYLcG3mxkBUiyWXAB32fGbSMQRdW",
+        "amount": {
+          "$bigint": "5000000"
+        },
+        "asset": "So11111111111111111111111111111111111111112",
+        "requestedAt": 1790894015080,
+        "params": {
+          "chain": "solana",
+          "cluster": "devnet",
+          "programId": "11111111111111111111111111111111",
+          "decimals": 9,
+          "from": "CaDcnU7SqiiKd9YQxowvHBzwX7tkTm3BmS6Bb2zMntaT"
+        }
+      },
+      "state": {
+        "spentInWindow": {
+          "$bigint": "10000000"
+        },
+        "windowStartedAt": 1790894015079,
+        "callsInWindow": 1,
+        "drawdownFromPeak": {
+          "$bigint": "0"
+        },
+        "revoked": false
+      },
+      "decision": {
+        "verdict": "deny",
+        "reasons": [
+          {
+            "rule": "counterparty_not_allowed",
+            "verdict": "deny",
+            "reason": "Counterparty GsbwXfJraMomNxBcjYLcG3mxkBUiyWXAB32fGbSMQRdW is not allowlisted"
+          }
+        ],
+        "policyId": "desk-alpha-treasury",
+        "policyVersion": 1,
+        "decidedAt": 1790894015080
+      },
+      "modelReasoning": "Refund an unknown address",
+      "rulesetVersion": 1,
+      "outcome": {
+        "executed": false
+      },
+      "previousReceiptHash": "36b0b86108b353e67e1f1f4cbaa5b3bec4db1bdd17384b45a0e2a262597eb166"
+    },
+    "signature": "0tDOCRTcjgYpjp96I4PxkIrzXuIilPtNjI/AfWF9H7nf6E/nXRYBMOXCczWhcmHFJccJbcF9VvfJoWIs/194Ag==",
+    "publicKey": "MCowBQYDK2VwAyEAq/L9KuxihDwl/4R3BqlF4kEjOVRScr2C+OjzClvbT+g=",
+    "algorithm": "ed25519"
+  },
+  {
+    "body": {
+      "receiptId": "a10dcd77ce4fc040d58f42c953ddb1bb",
+      "schemaVersion": 1,
+      "policyHash": "e03cf747d80826ea68d820c4d85ee48484af922b0b5afe4f9f63dd5f61299fb8",
+      "request": {
+        "agentId": "desk-bot",
+        "tool": "solana_transfer",
+        "counterparty": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+        "amount": {
+          "$bigint": "30000000"
+        },
+        "asset": "So11111111111111111111111111111111111111112",
+        "requestedAt": 1790894015081,
+        "params": {
+          "chain": "solana",
+          "cluster": "devnet",
+          "programId": "11111111111111111111111111111111",
+          "decimals": 9,
+          "from": "CaDcnU7SqiiKd9YQxowvHBzwX7tkTm3BmS6Bb2zMntaT"
+        }
+      },
+      "state": {
+        "spentInWindow": {
+          "$bigint": "10000000"
+        },
+        "windowStartedAt": 1790894015079,
+        "callsInWindow": 1,
+        "drawdownFromPeak": {
+          "$bigint": "0"
+        },
+        "revoked": false
+      },
+      "decision": {
+        "verdict": "escalate",
+        "reasons": [
+          {
+            "rule": "human_approval_required",
+            "verdict": "escalate",
+            "reason": "Amount 30000000 is at or above the escalation threshold 20000000"
+          }
+        ],
+        "policyId": "desk-alpha-treasury",
+        "policyVersion": 1,
+        "decidedAt": 1790894015081
+      },
+      "modelReasoning": "Prepay vendor B for the quarter",
+      "rulesetVersion": 1,
+      "outcome": {
+        "executed": false
+      },
+      "previousReceiptHash": "cd46328cfd41c0fce0c8517d8de92b8751d4ed89f80293b544405704cb46b788"
+    },
+    "signature": "y1ivkc11873ilkyWJtw8P5R3MeJvFNWpHjgdAiwAwGVGmgsN+CWwQ7W/WsIITRhHlrZXRHxTsXoUmTMEA1e3AQ==",
+    "publicKey": "MCowBQYDK2VwAyEAq/L9KuxihDwl/4R3BqlF4kEjOVRScr2C+OjzClvbT+g=",
+    "algorithm": "ed25519"
+  },
+  {
+    "body": {
+      "receiptId": "bedc73a251d4266d6a35854b4580641b",
+      "schemaVersion": 1,
+      "policyHash": "e03cf747d80826ea68d820c4d85ee48484af922b0b5afe4f9f63dd5f61299fb8",
+      "request": {
+        "agentId": "desk-bot",
+        "tool": "solana_transfer",
+        "counterparty": "7VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE",
+        "amount": {
+          "$bigint": "200000000"
+        },
+        "asset": "So11111111111111111111111111111111111111112",
+        "requestedAt": 1790894015082,
+        "params": {
+          "chain": "solana",
+          "cluster": "devnet",
+          "programId": "11111111111111111111111111111111",
+          "decimals": 9,
+          "from": "CaDcnU7SqiiKd9YQxowvHBzwX7tkTm3BmS6Bb2zMntaT"
+        }
+      },
+      "state": {
+        "spentInWindow": {
+          "$bigint": "10000000"
+        },
+        "windowStartedAt": 1790894015079,
+        "callsInWindow": 1,
+        "drawdownFromPeak": {
+          "$bigint": "0"
+        },
+        "revoked": false
+      },
+      "decision": {
+        "verdict": "deny",
+        "reasons": [
+          {
+            "rule": "mint_cap_exceeded",
+            "verdict": "deny",
+            "reason": "Amount 200000000 exceeds the cap for So11111111111111111111111111111111111111112"
+          },
+          {
+            "rule": "amount_exceeds_window",
+            "verdict": "deny",
+            "reason": "Projected window spend 210000000 exceeds cap 100000000"
+          }
+        ],
+        "policyId": "desk-alpha-treasury",
+        "policyVersion": 1,
+        "decidedAt": 1790894015082
+      },
+      "modelReasoning": "Sweep reserves to vendor A",
+      "rulesetVersion": 1,
+      "outcome": {
+        "executed": false
+      },
+      "previousReceiptHash": "47bbbe317200084711a31b0a7974434d0274650428a2b863cd41a419b4571008"
+    },
+    "signature": "QjunT4+9x5xFHNW8mxGR7Iy3i4CNPLM6C9f6we3vLkVd9ydr/mPf/gJaa3W7sjaaa6JbtAdnYiWpYQAiqIw1Aw==",
+    "publicKey": "MCowBQYDK2VwAyEAq/L9KuxihDwl/4R3BqlF4kEjOVRScr2C+OjzClvbT+g=",
+    "algorithm": "ed25519"
+  },
+  {
+    "body": {
+      "receiptId": "d42c9460f8c259df134205dafbc3a710",
+      "schemaVersion": 1,
+      "policyHash": "e03cf747d80826ea68d820c4d85ee48484af922b0b5afe4f9f63dd5f61299fb8",
+      "request": {
+        "agentId": "desk-bot",
+        "tool": "solana_transfer",
+        "counterparty": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+        "amount": {
+          "$bigint": "15000000"
+        },
+        "asset": "So11111111111111111111111111111111111111112",
+        "requestedAt": 1790894015083,
+        "params": {
+          "chain": "solana",
+          "cluster": "devnet",
+          "programId": "11111111111111111111111111111111",
+          "decimals": 9,
+          "from": "CaDcnU7SqiiKd9YQxowvHBzwX7tkTm3BmS6Bb2zMntaT"
+        }
+      },
+      "state": {
+        "spentInWindow": {
+          "$bigint": "10000000"
+        },
+        "windowStartedAt": 1790894015079,
+        "callsInWindow": 1,
+        "drawdownFromPeak": {
+          "$bigint": "0"
+        },
+        "revoked": false
+      },
+      "decision": {
+        "verdict": "allow",
+        "reasons": [
+          {
+            "rule": "all_checks_passed",
+            "verdict": "allow",
+            "reason": "No rule objected"
+          }
+        ],
+        "policyId": "desk-alpha-treasury",
+        "policyVersion": 1,
+        "decidedAt": 1790894015083
+      },
+      "modelReasoning": "Pay vendor B invoice #77",
+      "rulesetVersion": 1,
+      "transaction": {
+        "signature": "3j9v6iBHCsSGPmkHzt8uBngn3iMSGy3onevxHtMBoNamy6gA3UtTP3rdELu4iLZUEk26RJK1cycUBcNcvRDhbWEy",
+        "messageSha256": "398e61972d819b9b8b9361c5a742ad2a50b1e903f6d476130b95122e2ae6d2c4",
+        "recentBlockhash": "EkSnNWid2cvwEVnVx9aBqawnmiCNiDgp3gUdkDPTKN1N"
+      },
+      "outcome": {
+        "executed": false
+      },
+      "previousReceiptHash": "ce0164e3d0c287907565e6251f9451eec7cd040cfbf72c981fa0e3333ea8dcbc"
+    },
+    "signature": "vsfda+n6nuJk36vjPZiDFFcpRfvPVnD8x0l25QPPKZyFrwiAr14B9NcykRu3i3gcyaTYUce6W0SB3A5P0cCsAg==",
+    "publicKey": "MCowBQYDK2VwAyEAq/L9KuxihDwl/4R3BqlF4kEjOVRScr2C+OjzClvbT+g=",
+    "algorithm": "ed25519"
+  }
+]

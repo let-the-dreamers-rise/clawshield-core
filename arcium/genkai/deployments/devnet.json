@@ -1,0 +1,12 @@
+{
+  "cluster": "devnet",
+  "rpc": "https://api.devnet.solana.com",
+  "programId": "AwiVMGyi8P9mN6ig5FA74CTS6sncc7bbh8CNAxKXUERk",
+  "clusterOffset": 456,
+  "circuitId": "genkai.policy.v2",
+  "policy": "4GAuWFqwJLhEqLAguJV3cdrwYWHc3yKP4QnYVkwWQRKL",
+  "policyId": "desk-alpha-treasury",
+  "commitment": "d5987b971868601cf6845a3b9b3a95fad90c056a306e3addc45d43b540890df1",
+  "authority": "2eL4upiq3BhtqHBVT4jchJkmwSukoLaBfVA8jFoYpjoU",
+  "note": "Public facts only. Pin programId, policy, commitment and circuitId to verify receipts."
+}

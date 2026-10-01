@@ -15,7 +15,7 @@
  */
 
 import * as anchor from "@anchor-lang/core";
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, Transaction } from "@solana/web3.js";
 import {
   RescueCipher,
   deserializeLE,
@@ -47,7 +47,10 @@ async function main(): Promise<void> {
   const seal: Seal = JSON.parse(fs.readFileSync(sealPath, "utf8"));
   if (seal.policyFields.length !== FIELDS) throw new Error(`expected ${FIELDS} policy fields, got ${seal.policyFields.length}`);
 
-  const provider = anchor.AnchorProvider.env();
+  // Blockhashes at "processed" (Anchor's default) are often unknown to the public RPC node
+  // that simulates the transaction; "confirmed" ones are not.
+  const env = anchor.AnchorProvider.env();
+  const provider = new anchor.AnchorProvider(env.connection, env.wallet, { commitment: "confirmed", preflightCommitment: "confirmed" });
   anchor.setProvider(provider);
   const idl = JSON.parse(fs.readFileSync("target/idl/genkai.json", "utf8"));
   const program = new anchor.Program(idl, provider);
@@ -98,15 +101,17 @@ async function ensureCompDef(provider: anchor.AnchorProvider, program: anchor.Pr
   }
   const mxeAccount = getMXEAccAddress(program.programId);
   const mxe = await getArciumProgram(provider).account.mxeAccount.fetch(mxeAccount);
-  const sig = await program.methods
-    .initEvaluatePolicyCompDef()
-    .accounts({
-      compDefAccount: compDef,
-      payer: provider.wallet.publicKey,
-      mxeAccount,
-      addressLookupTable: getLookupTableAddress(program.programId, mxe.lutOffsetSlot),
-    } as never)
-    .rpc({ commitment: "confirmed" });
+  const sig = await send(provider, () =>
+    program.methods
+      .initEvaluatePolicyCompDef()
+      .accounts({
+        compDefAccount: compDef,
+        payer: provider.wallet.publicKey,
+        mxeAccount,
+        addressLookupTable: getLookupTableAddress(program.programId, mxe.lutOffsetSlot),
+      } as never)
+      .transaction(),
+  );
   log(`computation definition ${compDef.toBase58()} registered (off-chain circuit): ${sig}`);
 }
 
@@ -125,19 +130,23 @@ async function stagePolicy(
   const ciphertexts = cipher.encrypt(seal.policyFields.map((f) => BigInt(f)), nonce);
   const accounts = { authority: provider.wallet.publicKey, policy };
 
-  await program.methods
-    .createPolicy(Array.from(policyId), Array.from(Buffer.from(seal.commitment, "hex")), Array.from(x25519.getPublicKey(secret)), new anchor.BN(deserializeLE(nonce).toString()))
-    .accountsPartial(accounts)
-    .rpc({ commitment: "confirmed" });
+  await send(provider, () =>
+    program.methods
+      .createPolicy(Array.from(policyId), Array.from(Buffer.from(seal.commitment, "hex")), Array.from(x25519.getPublicKey(secret)), new anchor.BN(deserializeLE(nonce).toString()))
+      .accountsPartial(accounts)
+      .transaction(),
+  );
   log(`policy record ${policy.toBase58()} created`);
   for (let start = 0; start < ciphertexts.length; start += CHUNK) {
-    await program.methods
-      .stageCiphertexts(start, ciphertexts.slice(start, start + CHUNK).map((c) => Array.from(c)))
-      .accountsPartial(accounts)
-      .rpc({ commitment: "confirmed" });
+    await send(provider, () =>
+      program.methods
+        .stageCiphertexts(start, ciphertexts.slice(start, start + CHUNK).map((c) => Array.from(c)))
+        .accountsPartial(accounts)
+        .transaction(),
+    );
     log(`  staged fields ${start}..${Math.min(start + CHUNK, ciphertexts.length) - 1}`);
   }
-  await program.methods.activatePolicy().accountsPartial(accounts).rpc({ commitment: "confirmed" });
+  await send(provider, () => program.methods.activatePolicy().accountsPartial(accounts).transaction());
   log("policy active");
 }
 
@@ -154,6 +163,35 @@ async function mxeKey(provider: anchor.AnchorProvider, programId: PublicKey, log
     await new Promise((r) => setTimeout(r, 5_000));
   }
   throw new Error("MXE public key unavailable after 5 minutes");
+}
+
+/**
+ * Sign and send one transaction, confirming against the same blockhash it was built on.
+ *
+ * Not Anchor's .rpc(): on the public devnet endpoint its preflight repeatedly failed with
+ * "Blockhash not found" while the identical transaction, built and simulated by hand, passed.
+ *
+ * Retries cover only the two cases where the transaction provably did not execute: preflight
+ * rejecting the blockhash (nothing was sent) and expiry (it can no longer land). Anything else
+ * is the program's answer and is thrown at once.
+ */
+async function send(provider: anchor.AnchorProvider, build: () => Promise<Transaction>, attempts = 5): Promise<string> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const tx = await build();
+      const { blockhash, lastValidBlockHeight } = await provider.connection.getLatestBlockhash("confirmed");
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = provider.wallet.publicKey;
+      const signed = await provider.wallet.signTransaction(tx);
+      const signature = await provider.connection.sendRawTransaction(signed.serialize(), { preflightCommitment: "confirmed" });
+      const result = await provider.connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
+      if (result.value.err) throw new Error(`${signature} failed on chain: ${JSON.stringify(result.value.err)}`);
+      return signature;
+    } catch (err) {
+      if (attempt >= attempts || !/Blockhash not found|block height exceeded/i.test(String(err))) throw err;
+      await new Promise((r) => setTimeout(r, 2_000 * attempt));
+    }
+  }
 }
 
 main().catch((err) => {

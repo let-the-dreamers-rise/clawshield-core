@@ -1,0 +1,357 @@
+[
+  {
+    "body": {
+      "receiptId": "586a8d7a2443fca6b599949f6fca192a",
+      "schemaVersion": 1,
+      "policyHash": "d5987b971868601cf6845a3b9b3a95fad90c056a306e3addc45d43b540890df1",
+      "request": {
+        "agentId": "desk-bot-sealed",
+        "tool": "solana_transfer",
+        "counterparty": "7VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE",
+        "amount": {
+          "$bigint": "10000000"
+        },
+        "asset": "So11111111111111111111111111111111111111112",
+        "requestedAt": 1790894015087,
+        "params": {
+          "chain": "solana",
+          "cluster": "devnet",
+          "programId": "11111111111111111111111111111111",
+          "decimals": 9,
+          "from": "CaDcnU7SqiiKd9YQxowvHBzwX7tkTm3BmS6Bb2zMntaT"
+        }
+      },
+      "state": {
+        "spentInWindow": {
+          "$bigint": "0"
+        },
+        "windowStartedAt": 1790894015087,
+        "callsInWindow": 0,
+        "drawdownFromPeak": {
+          "$bigint": "0"
+        },
+        "revoked": false
+      },
+      "decision": {
+        "verdict": "allow",
+        "reasons": [
+          {
+            "rule": "all_checks_passed",
+            "verdict": "allow",
+            "reason": "withheld: sealed policy"
+          }
+        ],
+        "policyId": "genkai.policy.v2",
+        "policyVersion": 0,
+        "decidedAt": 1790894015087
+      },
+      "modelReasoning": "Pay vendor A invoice #1042",
+      "rulesetVersion": 1,
+      "attestation": {
+        "kind": "onchain",
+        "circuitId": "genkai.policy.v2",
+        "programId": "AwiVMGyi8P9mN6ig5FA74CTS6sncc7bbh8CNAxKXUERk",
+        "policy": "4GAuWFqwJLhEqLAguJV3cdrwYWHc3yKP4QnYVkwWQRKL",
+        "decision": "9dkMNMbZ6chVHSUyz2t3mkV7awHGce4TJcjJyUGTVjgG",
+        "computationOffset": {
+          "$bigint": "9319926608987000155"
+        },
+        "queueSignature": "3Ehrnv2m2ijVaqfU3RcByuu3X17MnAKbgNr2PmLVFmwczEgW5NRgvMzENGccxJUXWcjEi58Ud6S1kfPWywhJHNqV"
+      },
+      "transaction": {
+        "signature": "3hPVZKY4ujo29uPXRSNxXD9RB4joh7exc77CZb1okNKvX8fyg94GvjB6AGzFvxDf1tzQHvH1TX6W3NNEtbzE2FVa",
+        "messageSha256": "0231a95fe64b2861c1638157bd0ec15e0079e7d8dd5e560c8cfb15501ec1aa21",
+        "recentBlockhash": "EkSnNWid2cvwEVnVx9aBqawnmiCNiDgp3gUdkDPTKN1N"
+      },
+      "outcome": {
+        "executed": false
+      },
+      "previousReceiptHash": null
+    },
+    "signature": "I1LFzIDOUYOP8GceBlwnDb6mWKFy9mEXIgGC8TPT55dcb1qPEdyrvmhEXSCZ/OjWFvkqP/ewo12l0cqrnHFkBA==",
+    "publicKey": "MCowBQYDK2VwAyEAq/L9KuxihDwl/4R3BqlF4kEjOVRScr2C+OjzClvbT+g=",
+    "algorithm": "ed25519"
+  },
+  {
+    "body": {
+      "receiptId": "b3dafdf8c697f3e3d6e8afcbd07d7849",
+      "schemaVersion": 1,
+      "policyHash": "d5987b971868601cf6845a3b9b3a95fad90c056a306e3addc45d43b540890df1",
+      "request": {
+        "agentId": "desk-bot-sealed",
+        "tool": "solana_transfer",
+        "counterparty": "GsbwXfJraMomNxBcjYLcG3mxkBUiyWXAB32fGbSMQRdW",
+        "amount": {
+          "$bigint": "5000000"
+        },
+        "asset": "So11111111111111111111111111111111111111112",
+        "requestedAt": 1790894015088,
+        "params": {
+          "chain": "solana",
+          "cluster": "devnet",
+          "programId": "11111111111111111111111111111111",
+          "decimals": 9,
+          "from": "CaDcnU7SqiiKd9YQxowvHBzwX7tkTm3BmS6Bb2zMntaT"
+        }
+      },
+      "state": {
+        "spentInWindow": {
+          "$bigint": "10000000"
+        },
+        "windowStartedAt": 1790894015087,
+        "callsInWindow": 1,
+        "drawdownFromPeak": {
+          "$bigint": "0"
+        },
+        "revoked": false
+      },
+      "decision": {
+        "verdict": "deny",
+        "reasons": [
+          {
+            "rule": "counterparty_not_allowed",
+            "verdict": "deny",
+            "reason": "withheld: sealed policy"
+          }
+        ],
+        "policyId": "genkai.policy.v2",
+        "policyVersion": 0,
+        "decidedAt": 1790894015088
+      },
+      "modelReasoning": "Refund an unknown address",
+      "rulesetVersion": 1,
+      "attestation": {
+        "kind": "onchain",
+        "circuitId": "genkai.policy.v2",
+        "programId": "AwiVMGyi8P9mN6ig5FA74CTS6sncc7bbh8CNAxKXUERk",
+        "policy": "4GAuWFqwJLhEqLAguJV3cdrwYWHc3yKP4QnYVkwWQRKL",
+        "decision": "FZFe6LMXEuW8CisUBeW31o2pFDAZu9yoFBXVanJh2bYF",
+        "computationOffset": {
+          "$bigint": "16052030812881701066"
+        },
+        "queueSignature": "5kb7o3xLbqqoLK9DQXT6ZzEK8XDq8Z3MAc9bDBeYLuKpqYu3DjPwfKxFwf16kDtq5x6uJqbrSHqFX3REEoteotit"
+      },
+      "outcome": {
+        "executed": false
+      },
+      "previousReceiptHash": "3e2bf32e5cba066b17280854ece56ccd12168e3610b803a02a2d6ec481eb0d48"
+    },
+    "signature": "b/Vkfo4vwp7Xe3YmntQfjl4c0FK9t+JyMHRaKNUiFY/aKsS+XE048gijc4wTpQN++3Y4IR6+kt6iLMSY7sPmDw==",
+    "publicKey": "MCowBQYDK2VwAyEAq/L9KuxihDwl/4R3BqlF4kEjOVRScr2C+OjzClvbT+g=",
+    "algorithm": "ed25519"
+  },
+  {
+    "body": {
+      "receiptId": "b66f2d3198722962f415a5a3e110d0d9",
+      "schemaVersion": 1,
+      "policyHash": "d5987b971868601cf6845a3b9b3a95fad90c056a306e3addc45d43b540890df1",
+      "request": {
+        "agentId": "desk-bot-sealed",
+        "tool": "solana_transfer",
+        "counterparty": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+        "amount": {
+          "$bigint": "30000000"
+        },
+        "asset": "So11111111111111111111111111111111111111112",
+        "requestedAt": 1790894015089,
+        "params": {
+          "chain": "solana",
+          "cluster": "devnet",
+          "programId": "11111111111111111111111111111111",
+          "decimals": 9,
+          "from": "CaDcnU7SqiiKd9YQxowvHBzwX7tkTm3BmS6Bb2zMntaT"
+        }
+      },
+      "state": {
+        "spentInWindow": {
+          "$bigint": "10000000"
+        },
+        "windowStartedAt": 1790894015087,
+        "callsInWindow": 1,
+        "drawdownFromPeak": {
+          "$bigint": "0"
+        },
+        "revoked": false
+      },
+      "decision": {
+        "verdict": "escalate",
+        "reasons": [
+          {
+            "rule": "human_approval_required",
+            "verdict": "escalate",
+            "reason": "withheld: sealed policy"
+          }
+        ],
+        "policyId": "genkai.policy.v2",
+        "policyVersion": 0,
+        "decidedAt": 1790894015089
+      },
+      "modelReasoning": "Prepay vendor B for the quarter",
+      "rulesetVersion": 1,
+      "attestation": {
+        "kind": "onchain",
+        "circuitId": "genkai.policy.v2",
+        "programId": "AwiVMGyi8P9mN6ig5FA74CTS6sncc7bbh8CNAxKXUERk",
+        "policy": "4GAuWFqwJLhEqLAguJV3cdrwYWHc3yKP4QnYVkwWQRKL",
+        "decision": "GAiM2QxVfERnN9rVxDEdWMb6AKq1gRwv1UvvSJSg5PAs",
+        "computationOffset": {
+          "$bigint": "6967832320871915662"
+        },
+        "queueSignature": "3CCqSnu6ytp4Dp4KHwLSatGufL2BjphJcsW11n2p3mk67CrAx2fAWMA8oMYJfbUKrWMiBKq961RbzuMz7UhKhSLP"
+      },
+      "outcome": {
+        "executed": false
+      },
+      "previousReceiptHash": "47bea366cf02bb53bc4dc753b3975115e7c1cd2232e574019084538f468d9803"
+    },
+    "signature": "gCQZN2k2Y5HXWhAL+0VcOJy2VtaULIJ3iUpSlR5XJXdW/wwMCKkJOdvwdpT6/27lB6pUeYgSvyw9NlnRMfshBQ==",
+    "publicKey": "MCowBQYDK2VwAyEAq/L9KuxihDwl/4R3BqlF4kEjOVRScr2C+OjzClvbT+g=",
+    "algorithm": "ed25519"
+  },
+  {
+    "body": {
+      "receiptId": "08c199677457b79ce9c8067d33f224c3",
+      "schemaVersion": 1,
+      "policyHash": "d5987b971868601cf6845a3b9b3a95fad90c056a306e3addc45d43b540890df1",
+      "request": {
+        "agentId": "desk-bot-sealed",
+        "tool": "solana_transfer",
+        "counterparty": "7VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE",
+        "amount": {
+          "$bigint": "200000000"
+        },
+        "asset": "So11111111111111111111111111111111111111112",
+        "requestedAt": 1790894015090,
+        "params": {
+          "chain": "solana",
+          "cluster": "devnet",
+          "programId": "11111111111111111111111111111111",
+          "decimals": 9,
+          "from": "CaDcnU7SqiiKd9YQxowvHBzwX7tkTm3BmS6Bb2zMntaT"
+        }
+      },
+      "state": {
+        "spentInWindow": {
+          "$bigint": "10000000"
+        },
+        "windowStartedAt": 1790894015087,
+        "callsInWindow": 1,
+        "drawdownFromPeak": {
+          "$bigint": "0"
+        },
+        "revoked": false
+      },
+      "decision": {
+        "verdict": "deny",
+        "reasons": [
+          {
+            "rule": "mint_cap_exceeded",
+            "verdict": "deny",
+            "reason": "withheld: sealed policy"
+          },
+          {
+            "rule": "amount_exceeds_window",
+            "verdict": "deny",
+            "reason": "withheld: sealed policy"
+          }
+        ],
+        "policyId": "genkai.policy.v2",
+        "policyVersion": 0,
+        "decidedAt": 1790894015090
+      },
+      "modelReasoning": "Sweep reserves to vendor A",
+      "rulesetVersion": 1,
+      "attestation": {
+        "kind": "onchain",
+        "circuitId": "genkai.policy.v2",
+        "programId": "AwiVMGyi8P9mN6ig5FA74CTS6sncc7bbh8CNAxKXUERk",
+        "policy": "4GAuWFqwJLhEqLAguJV3cdrwYWHc3yKP4QnYVkwWQRKL",
+        "decision": "AiaEEa4CzS48dq5hiyKMzcEo4j8oxcbFTpAUiRqP3TZa",
+        "computationOffset": {
+          "$bigint": "7964666160691778826"
+        },
+        "queueSignature": "5t7bGKSy6iWDgQZjRe11E8KXpDfZKNQGNuBj4iMm1Mm74gjf3Ks9jG5XE3pDkdQAjj4aCQKYiwortR9T7yCcDqnn"
+      },
+      "outcome": {
+        "executed": false
+      },
+      "previousReceiptHash": "a00165cba8bd290d756d268d546bc6f0bced64598e9aeba2a5f441c9583df5d3"
+    },
+    "signature": "nHijATMuA8r8D/XghUfLVUiL/xl2Zi4KugtJvqyAvf8Lsz6bhkDI7k1cBxtPsxmAWtbVV6CXUrp8HGbi2YBaAA==",
+    "publicKey": "MCowBQYDK2VwAyEAq/L9KuxihDwl/4R3BqlF4kEjOVRScr2C+OjzClvbT+g=",
+    "algorithm": "ed25519"
+  },
+  {
+    "body": {
+      "receiptId": "a8c884504a2ef6e91507debd756a6f08",
+      "schemaVersion": 1,
+      "policyHash": "d5987b971868601cf6845a3b9b3a95fad90c056a306e3addc45d43b540890df1",
+      "request": {
+        "agentId": "desk-bot-sealed",
+        "tool": "solana_transfer",
+        "counterparty": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+        "amount": {
+          "$bigint": "15000000"
+        },
+        "asset": "So11111111111111111111111111111111111111112",
+        "requestedAt": 1790894015091,
+        "params": {
+          "chain": "solana",
+          "cluster": "devnet",
+          "programId": "11111111111111111111111111111111",
+          "decimals": 9,
+          "from": "CaDcnU7SqiiKd9YQxowvHBzwX7tkTm3BmS6Bb2zMntaT"
+        }
+      },
+      "state": {
+        "spentInWindow": {
+          "$bigint": "10000000"
+        },
+        "windowStartedAt": 1790894015087,
+        "callsInWindow": 1,
+        "drawdownFromPeak": {
+          "$bigint": "0"
+        },
+        "revoked": false
+      },
+      "decision": {
+        "verdict": "allow",
+        "reasons": [
+          {
+            "rule": "all_checks_passed",
+            "verdict": "allow",
+            "reason": "withheld: sealed policy"
+          }
+        ],
+        "policyId": "genkai.policy.v2",
+        "policyVersion": 0,
+        "decidedAt": 1790894015091
+      },
+      "modelReasoning": "Pay vendor B invoice #77",
+      "rulesetVersion": 1,
+      "attestation": {
+        "kind": "onchain",
+        "circuitId": "genkai.policy.v2",
+        "programId": "AwiVMGyi8P9mN6ig5FA74CTS6sncc7bbh8CNAxKXUERk",
+        "policy": "4GAuWFqwJLhEqLAguJV3cdrwYWHc3yKP4QnYVkwWQRKL",
+        "decision": "9Nvr6wtxsmTYrMgmregzWZRtbgkYA4h3H8CT4oDK2uEb",
+        "computationOffset": {
+          "$bigint": "3923216414282490677"
+        },
+        "queueSignature": "2vhFSd7MQPQ2GQFjsEMUNxYPPpASUFpzwmRf6uMRinp4sEcrSyK82w4s8v3c6K1CWRWUMcXyepLjMrHDDKgeyRD6"
+      },
+      "transaction": {
+        "signature": "2rurHxr9LxYeAcny2ZNZb4JTTa3sYj4xqMxCJ2WZsGFUecZxnh7UkwcJXxprgh18evTYhFQuGVFWHMgfr8amTEx9",
+        "messageSha256": "77c10616c4b03d127d16c4fcc4aad0f04b1bbb37e38d48e16beea628fc5bd89f",
+        "recentBlockhash": "EkSnNWid2cvwEVnVx9aBqawnmiCNiDgp3gUdkDPTKN1N"
+      },
+      "outcome": {
+        "executed": false
+      },
+      "previousReceiptHash": "d76c1faabfbf01d813acbb80c7b59951493ca844fe055e70f4e5abf734aeefda"
+    },
+    "signature": "cFWwHMoBLlRXbbV28SKVZUqPamU0fzyjB7nOOKzCAQKGoxOryrtqrHVLUib6zwGdJlUSVaPkLg9hs/oXNZUoAA==",
+    "publicKey": "MCowBQYDK2VwAyEAq/L9KuxihDwl/4R3BqlF4kEjOVRScr2C+OjzClvbT+g=",
+    "algorithm": "ed25519"
+  }
+]
