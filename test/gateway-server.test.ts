@@ -220,6 +220,14 @@ test("one agent cannot read another agent's private data", async () => {
   assert.equal((await call("GET", `/v1/receipts/${firstId}/transaction`, { token: admin })).status, 200);
 });
 
+test("a malformed escape in a path is a client error, never a server error", async () => {
+  for (const path of ["/v1/receipts/%E0%A4%A", "/v1/agents/%ZZ/receipts", "/v1/receipts/%/transaction"]) {
+    const res = await call("GET", path, { token: admin });
+    assert.equal(res.status, 404, path);
+    assert.equal(res.success, false);
+  }
+});
+
 test("requests are logged without credentials, and errors are uniform", async () => {
   assert.equal((await call("GET", "/v1/nothing")).status, 404);
   assert.equal((await call("PUT", "/v1/decisions")).status, 405);
@@ -232,4 +240,10 @@ test("requests are logged without credentials, and errors are uniform", async ()
   assert.equal(logs.some((l) => l.includes("gk_")), false, "no credential reaches the logs");
   const line = JSON.parse(logs[0] as string);
   assert.ok("status" in line && "ms" in line && "path" in line);
+
+  // A client holding a failed response can name the log line that explains it.
+  const missing = await fetch(`${base}/v1/nothing`);
+  const id = missing.headers.get("x-request-id") ?? "";
+  assert.match(id, /^[0-9a-f]{16}$/);
+  assert.ok(logs.some((l) => JSON.parse(l).id === id && JSON.parse(l).status === 404));
 });

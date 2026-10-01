@@ -288,12 +288,22 @@ export type RouteMatch =
   | { readonly kind: "method"; readonly allowed: readonly string[] }
   | { readonly kind: "not_found" };
 
+/** A malformed escape ("%E0%A4%A") names nothing, so it is a missing resource, not a fault. */
+function decodeSegment(segment: string): string | undefined {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return undefined;
+  }
+}
+
 export function matchRoute(method: string, path: string): RouteMatch {
   const hits = COMPILED.map((route) => ({ route, m: route.pattern.exec(path) })).filter((h) => h.m !== null);
   if (hits.length === 0) return { kind: "not_found" };
   const hit = hits.find((h) => h.route.method === method);
   if (!hit || !hit.m) return { kind: "method", allowed: [...new Set(hits.map((h) => h.route.method))] };
   const m = hit.m;
-  const params = Object.fromEntries(hit.route.keys.map((k, i) => [k, decodeURIComponent(m[i + 1] ?? "")]));
-  return { kind: "ok", route: hit.route, params };
+  const decoded = hit.route.keys.map((k, i) => [k, decodeSegment(m[i + 1] ?? "")] as const);
+  if (decoded.some(([, v]) => v === undefined)) return { kind: "not_found" };
+  return { kind: "ok", route: hit.route, params: Object.fromEntries(decoded) as Record<string, string> };
 }

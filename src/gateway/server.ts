@@ -16,8 +16,9 @@
  * cannot take decisions: who acted is always an agent identity, so the receipt chain and the
  * audit trail never have to guess.
  *
- * Every response is { success, data, error, meta? }. Each request is logged as one JSON line
- * with its id, route, status, latency and key id. Never the credential, never the body.
+ * Every response is { success, data, error, meta? } and carries an X-Request-Id. Each request is
+ * logged as one JSON line with that id, route, status, latency and key id. Never the credential,
+ * never the body.
  */
 
 import { randomBytes } from "node:crypto";
@@ -70,6 +71,8 @@ export function createGatewayHandler(config: GatewayServerConfig): (req: Incomin
   return async (req, res) => {
     const started = Date.now();
     const requestId = randomBytes(8).toString("hex");
+    // Returned on every response, so a client holding a failure can name the log line behind it.
+    res.setHeader("x-request-id", requestId);
     const url = new URL(req.url ?? "/", "http://gateway.invalid");
     let principal: Principal | undefined;
     let route = "unmatched";
