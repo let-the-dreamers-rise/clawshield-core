@@ -84,7 +84,9 @@ export const checkMintSpendCap: SolanaRule = (p, r) => {
   if (p.maxAmountPerMint === undefined || r.amount === undefined) return null;
 
   const mint = mintOf(r);
-  const cap = p.maxAmountPerMint[mint];
+  // Own properties only. A plain lookup would let a mint named "constructor" find Object's
+  // constructor through the prototype chain and be treated as capped.
+  const cap = Object.hasOwn(p.maxAmountPerMint, mint) ? p.maxAmountPerMint[mint] : undefined;
   if (cap === undefined) {
     return deny("mint_cap_missing", `No per-mint cap is configured for ${mint}`);
   }

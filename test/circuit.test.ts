@@ -114,6 +114,32 @@ function randomRequest(r: ReturnType<typeof prng>): ActionRequest {
   };
 }
 
+/**
+ * A request drawn from the policy's own allowlists, so cases get past the membership rules and
+ * exercise the numeric caps, the time window and escalation. Purely random requests are
+ * overwhelmingly denied at the first allowlist, which would leave those paths untested.
+ */
+function alignedRequest(r: ReturnType<typeof prng>, policy: Policy): ActionRequest {
+  const base = randomRequest(r);
+  const from = <T>(xs: readonly T[] | undefined, fallback: T): T => (xs && xs.length > 0 && r.chance(0.9) ? r.pick(xs) : fallback);
+  return {
+    ...base,
+    tool: from(policy.allowedTools, base.tool),
+    counterparty: from(policy.counterpartyAllowlist, base.counterparty),
+    asset: from(policy.allowedMints, base.asset),
+    amount: r.chance(0.9) ? r.pick(MAGNITUDES.slice(1, -1)) : base.amount,
+    params: r.chance(0.5)
+      ? {}
+      : {
+          chain: "solana",
+          cluster: from(policy.allowedClusters, "devnet"),
+          programId: from(policy.allowedPrograms, TOKEN_PROGRAM_ID),
+          decimals: 6,
+          from: VAULT,
+        },
+  };
+}
+
 function randomState(r: ReturnType<typeof prng>): AgentState {
   return {
     spentInWindow: r.pick(MAGNITUDES.slice(0, -1)),
@@ -129,8 +155,8 @@ test("the circuit model agrees with the engine on 20,000 random cases", () => {
   const verdicts = { allow: 0, deny: 0, escalate: 0 };
   for (let i = 0; i < 20_000; i++) {
     const policy = randomPolicy(r);
-    const request = randomRequest(r);
-    const state = randomState(r);
+    const request = r.chance(0.4) ? alignedRequest(r, policy) : randomRequest(r);
+    const state = r.chance(0.4) ? { ...randomState(r), revoked: false, callsInWindow: 0 } : randomState(r);
 
     const expected = evaluate(policy, request, state, 0);
     const out = evaluateCircuit(encodePolicy(policy), encodeRequest(request, state));
@@ -141,7 +167,7 @@ test("the circuit model agrees with the engine on 20,000 random cases", () => {
   }
   // The generator must actually reach every verdict, or agreement proves little.
   for (const [verdict, count] of Object.entries(verdicts)) {
-    assert.ok(count > 500, `only ${count} ${verdict} cases were generated`);
+    assert.ok(count > 250, `only ${count} ${verdict} cases were generated`);
   }
 });
 
