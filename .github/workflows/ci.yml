@@ -1,0 +1,37 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: typecheck, test, coverage (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:coverage
+      - name: Offline demo, then verify its output as a stranger would
+        run: |
+          npm run --silent demo -- --out demo-out
+          npm run --silent genkai -- verify-chain demo-out/plaintext/receipts.json --policy demo-out/plaintext/policy.json
+          npm run --silent genkai -- verify-chain demo-out/sealed/receipts.json --trust demo-out/sealed/trust.json
