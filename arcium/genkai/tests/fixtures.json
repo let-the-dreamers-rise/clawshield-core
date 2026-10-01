@@ -1,0 +1,310 @@
+{
+  "circuitId": "genkai.policy.v1",
+  "policyId": "desk-alpha-treasury",
+  "commitment": "26f0e8957787a1364e6a751b22750d960c7ecbae5ec4c4538a5cf71ba1a39313",
+  "policyFields": [
+    "1",
+    "1",
+    "26965157196186361953687631272942359731",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "1",
+    "2",
+    "11038336395465507141484136921906519395",
+    "100091834222092760138386605949102032623",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "1",
+    "1",
+    "37921091810006288621423587907140399989",
+    "0",
+    "0",
+    "0",
+    "1",
+    "1",
+    "333574456676673463611143556258738026420",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "1",
+    "1",
+    "279941530260053878299590288797301085880",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "1",
+    "1",
+    "279941530260053878299590288797301085880",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "50000000",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "1",
+    "100000000",
+    "1",
+    "10",
+    "0",
+    "0",
+    "1",
+    "20000000",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0"
+  ],
+  "requests": [
+    {
+      "intent": "in policy: pay vendor A",
+      "fields": {
+        "toolId": "26965157196186361953687631272942359731",
+        "hasCounterparty": true,
+        "counterpartyId": "11038336395465507141484136921906519395",
+        "hasAmount": true,
+        "amountNegative": false,
+        "amountMagnitude": "10000000",
+        "isSolana": true,
+        "solanaValid": true,
+        "clusterId": "37921091810006288621423587907140399989",
+        "programId": "333574456676673463611143556258738026420",
+        "mintId": "279941530260053878299590288797301085880",
+        "minuteOfDay": 720,
+        "dayOfWeek": 4,
+        "revoked": false,
+        "spentInWindow": "0",
+        "callsInWindow": "0",
+        "drawdownFromPeak": "0"
+      },
+      "expected": {
+        "verdict": 0,
+        "mask": 0,
+        "verdictName": "allow",
+        "rules": [
+          "all_checks_passed"
+        ]
+      }
+    },
+    {
+      "intent": "counterparty not allowlisted",
+      "fields": {
+        "toolId": "26965157196186361953687631272942359731",
+        "hasCounterparty": true,
+        "counterpartyId": "253983758006400949666535235548455310640",
+        "hasAmount": true,
+        "amountNegative": false,
+        "amountMagnitude": "5000000",
+        "isSolana": true,
+        "solanaValid": true,
+        "clusterId": "37921091810006288621423587907140399989",
+        "programId": "333574456676673463611143556258738026420",
+        "mintId": "279941530260053878299590288797301085880",
+        "minuteOfDay": 720,
+        "dayOfWeek": 4,
+        "revoked": false,
+        "spentInWindow": "0",
+        "callsInWindow": "0",
+        "drawdownFromPeak": "0"
+      },
+      "expected": {
+        "verdict": 1,
+        "mask": 16,
+        "verdictName": "deny",
+        "rules": [
+          "counterparty_not_allowed"
+        ]
+      }
+    },
+    {
+      "intent": "above the escalation threshold",
+      "fields": {
+        "toolId": "26965157196186361953687631272942359731",
+        "hasCounterparty": true,
+        "counterpartyId": "100091834222092760138386605949102032623",
+        "hasAmount": true,
+        "amountNegative": false,
+        "amountMagnitude": "30000000",
+        "isSolana": true,
+        "solanaValid": true,
+        "clusterId": "37921091810006288621423587907140399989",
+        "programId": "333574456676673463611143556258738026420",
+        "mintId": "279941530260053878299590288797301085880",
+        "minuteOfDay": 720,
+        "dayOfWeek": 4,
+        "revoked": false,
+        "spentInWindow": "0",
+        "callsInWindow": "0",
+        "drawdownFromPeak": "0"
+      },
+      "expected": {
+        "verdict": 2,
+        "mask": 131072,
+        "verdictName": "escalate",
+        "rules": [
+          "human_approval_required"
+        ]
+      }
+    },
+    {
+      "intent": "over the per-mint cap and the window",
+      "fields": {
+        "toolId": "26965157196186361953687631272942359731",
+        "hasCounterparty": true,
+        "counterpartyId": "11038336395465507141484136921906519395",
+        "hasAmount": true,
+        "amountNegative": false,
+        "amountMagnitude": "200000000",
+        "isSolana": true,
+        "solanaValid": true,
+        "clusterId": "37921091810006288621423587907140399989",
+        "programId": "333574456676673463611143556258738026420",
+        "mintId": "279941530260053878299590288797301085880",
+        "minuteOfDay": 720,
+        "dayOfWeek": 4,
+        "revoked": false,
+        "spentInWindow": "0",
+        "callsInWindow": "0",
+        "drawdownFromPeak": "0"
+      },
+      "expected": {
+        "verdict": 1,
+        "mask": 24576,
+        "verdictName": "deny",
+        "rules": [
+          "mint_cap_exceeded",
+          "amount_exceeds_window"
+        ]
+      }
+    },
+    {
+      "intent": "window already nearly spent",
+      "fields": {
+        "toolId": "26965157196186361953687631272942359731",
+        "hasCounterparty": true,
+        "counterpartyId": "100091834222092760138386605949102032623",
+        "hasAmount": true,
+        "amountNegative": false,
+        "amountMagnitude": "15000000",
+        "isSolana": true,
+        "solanaValid": true,
+        "clusterId": "37921091810006288621423587907140399989",
+        "programId": "333574456676673463611143556258738026420",
+        "mintId": "279941530260053878299590288797301085880",
+        "minuteOfDay": 720,
+        "dayOfWeek": 4,
+        "revoked": false,
+        "spentInWindow": "90000000",
+        "callsInWindow": "0",
+        "drawdownFromPeak": "0"
+      },
+      "expected": {
+        "verdict": 1,
+        "mask": 16384,
+        "verdictName": "deny",
+        "rules": [
+          "amount_exceeds_window"
+        ]
+      }
+    },
+    {
+      "intent": "rate limited and revoked",
+      "fields": {
+        "toolId": "26965157196186361953687631272942359731",
+        "hasCounterparty": true,
+        "counterpartyId": "11038336395465507141484136921906519395",
+        "hasAmount": true,
+        "amountNegative": false,
+        "amountMagnitude": "1000",
+        "isSolana": true,
+        "solanaValid": true,
+        "clusterId": "37921091810006288621423587907140399989",
+        "programId": "333574456676673463611143556258738026420",
+        "mintId": "279941530260053878299590288797301085880",
+        "minuteOfDay": 720,
+        "dayOfWeek": 4,
+        "revoked": true,
+        "spentInWindow": "0",
+        "callsInWindow": "10",
+        "drawdownFromPeak": "0"
+      },
+      "expected": {
+        "verdict": 1,
+        "mask": 1025,
+        "verdictName": "deny",
+        "rules": [
+          "revoked",
+          "rate_limited"
+        ]
+      }
+    },
+    {
+      "intent": "wrong program and mint",
+      "fields": {
+        "toolId": "26965157196186361953687631272942359731",
+        "hasCounterparty": true,
+        "counterpartyId": "11038336395465507141484136921906519395",
+        "hasAmount": true,
+        "amountNegative": false,
+        "amountMagnitude": "1000",
+        "isSolana": true,
+        "solanaValid": true,
+        "clusterId": "37921091810006288621423587907140399989",
+        "programId": "115439911365525232418792429550628723418",
+        "mintId": "173535142411835401649301505328442104657",
+        "minuteOfDay": 720,
+        "dayOfWeek": 4,
+        "revoked": false,
+        "spentInWindow": "0",
+        "callsInWindow": "0",
+        "drawdownFromPeak": "0"
+      },
+      "expected": {
+        "verdict": 1,
+        "mask": 4288,
+        "verdictName": "deny",
+        "rules": [
+          "program_not_allowed",
+          "mint_not_allowed",
+          "mint_cap_missing"
+        ]
+      }
+    }
+  ]
+}
