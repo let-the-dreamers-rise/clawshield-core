@@ -10,6 +10,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { fromJson, toJson } from "../src/io/json.ts";
+import { canonicalise } from "../src/receipt/canonical.ts";
 import { SchemaError, parsePolicy, parseSealedTrust, parseSignedReceipt } from "../src/io/schema.ts";
 import { generateKeypair } from "../src/receipt/sign.ts";
 import { verifyReceipt } from "../src/receipt/verify.ts";
@@ -72,8 +73,16 @@ test("a bigint tag must be exactly a decimal integer", () => {
 test("a receipt round-trips through JSON and still verifies", async () => {
   const receipt = await sampleReceipt();
   const parsed = parseSignedReceipt(fromJson(toJson(receipt as never)));
-  assert.deepEqual(parsed, receipt);
+  // Compared by canonical bytes: the parser drops undefined-valued keys, as canonical form does.
+  assert.equal(canonicalise(parsed as never), canonicalise(receipt as never));
   assert.equal(verifyReceipt(parsed, policy).valid, true);
+});
+
+test("an object that impersonates a bigint tag is refused, so one signature cannot mean two values", () => {
+  // Canonical form writes 5n as {"$bigint":"5"}. If a params object could carry that literal
+  // shape, the bigint and the object would canonicalise to identical bytes.
+  assert.throws(() => canonicalise({ params: { $bigint: "5" } } as never), TypeError);
+  assert.throws(() => toJson({ x: { $bigint: "5" } } as never), TypeError);
 });
 
 test("a policy round-trips through JSON", () => {

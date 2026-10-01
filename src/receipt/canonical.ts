@@ -21,6 +21,8 @@ export type Canonicalisable =
   | readonly Canonicalisable[]
   | { readonly [k: string]: Canonicalisable };
 
+export const BIGINT_TAG = "$bigint";
+
 export function canonicalise(value: Canonicalisable): string {
   if (value === null) return "null";
   if (value === undefined) return "null";
@@ -44,6 +46,11 @@ export function canonicalise(value: Canonicalisable): string {
   }
 
   const obj = value as { readonly [k: string]: Canonicalisable };
+  // Reserved: {"$bigint": ...} is how a bigint is written. An object carrying that key would
+  // canonicalise to the same bytes as a bigint, and one signature would cover two meanings.
+  if (Object.hasOwn(obj, BIGINT_TAG)) {
+    throw new TypeError(`The key "${BIGINT_TAG}" is reserved for bigint encoding`);
+  }
   const keys = Object.keys(obj)
     .filter((k) => obj[k] !== undefined)
     .sort();
