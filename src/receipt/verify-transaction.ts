@@ -24,10 +24,16 @@ export function rebuildBoundMessage(body: ReceiptBody): Uint8Array {
   });
 }
 
+/** RFC 8410 SubjectPublicKeyInfo prefix; a raw 32-byte Ed25519 key follows it. */
+const SPKI_ED25519_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+
+// SPKI DER rather than JWK: it is the form every other verifier here uses, and it keeps this
+// path free of base64url, which the browser build's Buffer does not implement.
 function verifyEd25519(message: Uint8Array, signature: Uint8Array, signer: string): boolean {
   const key = createPublicKey({
-    key: { kty: "OKP", crv: "Ed25519", x: Buffer.from(decodePubkey(signer)).toString("base64url") },
-    format: "jwk",
+    key: Buffer.concat([SPKI_ED25519_PREFIX, decodePubkey(signer)]),
+    format: "der",
+    type: "spki",
   });
   return cryptoVerify(null, message, key, signature);
 }

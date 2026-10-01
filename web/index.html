@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GENKAI Receipt Verifier</title>
+  <meta name="description" content="Confidential policy enforcement for Solana agents. Verify GENKAI decision receipts in your browser against the Arcium MXE deployment on Solana devnet.">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#verify">Skip to the verifier</a>
+
+  <header class="site-header">
+    <div class="wrap header-row">
+      <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>GENKAI</a>
+      <nav class="site-nav" aria-label="Sections">
+        <a href="#deployment">Deployment</a>
+        <a href="#verify">Verify</a>
+        <a href="#how">How it works</a>
+        <a href="#api">API</a>
+        <a href="https://github.com/let-the-dreamers-rise/clawshield-core" rel="noopener noreferrer">Source</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="wrap">
+        <p class="eyebrow">Live on Solana devnet &middot; evaluated inside an Arcium MXE</p>
+        <h1 id="hero-title">Spending limits for AI agents that nobody can read and anybody can check.</h1>
+        <p class="lede">GENKAI keeps an agent's policy encrypted inside an Arcium multi-party computation. The cluster decides <em>allow</em>, <em>deny</em> or <em>escalate</em> without decrypting a single limit and records its verdict on chain. Every decision leaves a signed receipt, and this page checks receipts in your browser with the same code as the <code>genkai</code> command line.</p>
+        <div class="hero-actions">
+          <button class="button primary" type="button" data-sample="sealed">Verify the devnet run</button>
+          <a class="button" href="#verify">Check your own receipts</a>
+        </div>
+        <p class="fine">Nothing you paste is uploaded. The page's only network requests are account reads to the Solana RPC endpoint you choose.</p>
+        <noscript><p class="notice">The verifier runs in your browser and needs JavaScript. The same checks are available from the <code>genkai</code> CLI and the API below.</p></noscript>
+      </div>
+    </section>
+
+    <section id="deployment" class="band" aria-labelledby="deployment-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="deployment-title">The deployment</h2>
+          <p>These are the public values a verifier pins. They are read live from devnet and compared with the published manifest.</p>
+        </div>
+        <p id="deployment-status" class="status-line" role="status"><span class="dot pending" aria-hidden="true"></span>Reading devnet&hellip;</p>
+        <dl id="deployment-facts" class="facts"></dl>
+      </div>
+    </section>
+
+    <section id="verify" aria-labelledby="verify-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="verify-title">Verify receipts</h2>
+          <p>Load a sample or paste your own. A sealed receipt is checked against a trust anchor and the DecisionRecord the cluster wrote on chain. A plaintext receipt is replayed against its policy.</p>
+        </div>
+
+        <div class="samples" role="group" aria-label="Samples">
+          <button class="button" type="button" data-sample="sealed">Sealed run on devnet</button>
+          <button class="button" type="button" data-sample="plaintext">Plaintext run, replayed</button>
+          <button class="button danger" type="button" data-sample="tamper">Rewrite a denial as an approval</button>
+        </div>
+
+        <form id="verify-form" class="verify-form" novalidate>
+          <div class="field">
+            <div class="field-head">
+              <label for="receipts-input">Receipts</label>
+              <label class="file-button">Load file<input class="visually-hidden" type="file" accept=".json,application/json" data-target="receipts-input"></label>
+            </div>
+            <textarea id="receipts-input" spellcheck="false" autocomplete="off" aria-describedby="receipts-hint"></textarea>
+            <p id="receipts-hint" class="hint">One receipt, or an array of one agent's receipts in order. You can drop a file here.</p>
+          </div>
+          <div class="field">
+            <div class="field-head">
+              <label for="anchor-input">Trust anchor or policy</label>
+              <label class="file-button">Load file<input class="visually-hidden" type="file" accept=".json,application/json" data-target="anchor-input"></label>
+            </div>
+            <textarea id="anchor-input" spellcheck="false" autocomplete="off" aria-describedby="anchor-hint"></textarea>
+            <p id="anchor-hint" class="hint">A trust anchor (commitment, circuitId, programId, policy) for sealed receipts, or the plaintext policy.</p>
+          </div>
+          <div class="field rpc-field">
+            <label for="rpc-input">Solana RPC endpoint</label>
+            <input id="rpc-input" type="url" spellcheck="false" autocomplete="off" inputmode="url">
+          </div>
+          <div class="form-actions">
+            <button id="verify-button" class="button primary" type="submit">Verify</button>
+            <p id="form-note" class="fine" aria-live="polite"></p>
+          </div>
+        </form>
+
+        <div id="result" class="result" tabindex="-1" aria-live="polite" hidden></div>
+      </div>
+    </section>
+
+    <section id="how" class="band" aria-labelledby="how-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="how-title">How a decision is made, and proven</h2>
+        </div>
+        <ol class="steps">
+          <li>
+            <h3>The agent asks</h3>
+            <p>An agent requests a transfer from the GENKAI gateway with its API key. It never supplies its own spending state, the vault or the clock. The gateway's ledger does.</p>
+          </li>
+          <li>
+            <h3>The cluster decides on ciphertext</h3>
+            <p>The request and the encrypted policy go to an Arcium MXE. The nodes evaluate the policy circuit without any of them seeing a limit, and the Arcium program checks their answer before GENKAI's callback writes it to a DecisionRecord.</p>
+          </li>
+          <li>
+            <h3>The operator signs a receipt</h3>
+            <p>It binds the policy commitment, the request, the ledger state, the verdict, the DecisionRecord, the previous receipt's hash and, for an allow, the exact transaction that was signed.</p>
+          </li>
+          <li>
+            <h3>Anyone verifies</h3>
+            <p>Pin the program, the PolicyRecord and the commitment. The signature, the chain and the bound transaction are checked offline, the verdict against the record on chain. The policy itself is never revealed.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section id="api" aria-labelledby="api-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="api-title">Hosted verification API</h2>
+          <p>The same verifier runs behind this site as a public endpoint: no key, no state, on-chain attestations read from devnet. Responses share one envelope, <code>{ success, data, error }</code>.</p>
+        </div>
+        <pre class="code"><code id="api-example">ORIGIN=https://this-site
+curl -s $ORIGIN/examples/devnet/sealed-receipts.json -o receipts.json
+curl -s $ORIGIN/examples/devnet/trust.json -o trust.json
+jq -n --slurpfile r receipts.json --slurpfile t trust.json '{receipts: $r[0], trust: $t[0]}' \
+  | curl -s $ORIGIN/v1/chains/verify -H 'content-type: application/json' -d @-</code></pre>
+        <dl class="endpoints">
+          <div><dt><code>POST /v1/receipts/verify</code></dt><dd>One receipt with <code>policy</code> or <code>trust</code>, and optionally <code>expectedPreviousHash</code>.</dd></div>
+          <div><dt><code>POST /v1/chains/verify</code></dt><dd>An ordered run of one agent's receipts: up to 100 when checked on chain.</dd></div>
+          <div><dt><code>GET /healthz</code></dt><dd>Liveness, and whether on-chain checks are enabled.</dd></div>
+        </dl>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-row">
+      <p>GENKAI is open source under the MIT license. Verification here runs the repository's own code, bundled with audited <code>@noble</code> cryptography for the browser.</p>
+      <p><a href="https://github.com/let-the-dreamers-rise/clawshield-core" rel="noopener noreferrer">Source on GitHub</a></p>
+    </div>
+  </footer>
+</body>
+</html>

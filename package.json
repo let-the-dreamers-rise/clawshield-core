@@ -4,18 +4,33 @@
   "description": "Verifiable authority for AI agents that move money. Policy enforced outside the model; decisions provable to a third party.",
   "license": "MIT",
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "node --test --experimental-strip-types \"test/*.test.ts\"",
     "test:coverage": "node --test --experimental-strip-types --experimental-test-coverage --test-coverage-include=\"src/**\" --test-coverage-lines=80 \"test/*.test.ts\"",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web",
+    "build:web": "node --experimental-strip-types --no-warnings scripts/build-web.ts",
+    "preview:web": "node --experimental-strip-types --no-warnings scripts/preview-web.ts",
     "genkai": "node --experimental-strip-types --no-warnings src/cli/main.ts",
     "demo": "node --experimental-strip-types --no-warnings src/cli/main.ts demo",
     "serve": "node --experimental-strip-types --no-warnings src/cli/main.ts serve"
   },
-  "keywords": ["ai-agents", "policy", "governance", "audit", "ed25519", "agentic-payments"],
+  "keywords": [
+    "ai-agents",
+    "policy",
+    "governance",
+    "audit",
+    "ed25519",
+    "agentic-payments"
+  ],
   "devDependencies": {
-    "typescript": "^5.6.0",
-    "@types/node": "^22.0.0"
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
+    "@types/node": "^22.0.0",
+    "buffer": "6.0.3",
+    "esbuild": "0.28.2",
+    "typescript": "^5.6.0"
   }
 }

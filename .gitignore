@@ -1,6 +1,7 @@
 ﻿node_modules/
 dist/
 demo-out/
+.vercel/
 *.keypair.json
 sealed-secret*.json
 *.log

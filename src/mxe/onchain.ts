@@ -30,6 +30,12 @@ const POLICY_FIELDS = 87;
 export const POLICY_RECORD_SIZE = 8 + 32 + 32 + 32 + 32 + 16 + 3 + 5 + POLICY_FIELDS * 32;
 
 const POLICY_STATUS = ["staging", "active", "revoked"] as const;
+
+const VERDICT_NAMES: Readonly<Record<number, Verdict>> = {
+  [VERDICT_CODE.allow]: "allow",
+  [VERDICT_CODE.deny]: "deny",
+  [VERDICT_CODE.escalate]: "escalate",
+};
 export type PolicyStatus = (typeof POLICY_STATUS)[number];
 
 const discriminator = (name: string): Buffer => createHash("sha256").update(`account:${name}`).digest().subarray(0, 8);
@@ -313,7 +319,8 @@ export async function checkOnChainDecision(claim: DecisionClaim, options: OnChai
   const onChainRules = decision.discloseRules ? ruleIdsOf({ verdict: decision.verdict as 0 | 1 | 2, mask: decision.mask }) : [];
   const rulesAgree = !decision.discloseRules || claim.ruleIds.join(",") === onChainRules.join(",");
   if (decision.verdict !== verdictCode || !rulesAgree) {
-    findings.push(["verdict_mismatch", `On chain: verdict ${decision.verdict} [${onChainRules.join(", ")}]; claimed: ${claim.verdict} [${claim.ruleIds.join(", ")}]`]);
+    const recorded = VERDICT_NAMES[decision.verdict] ?? `unknown verdict code ${decision.verdict}`;
+    findings.push(["verdict_mismatch", `The cluster recorded ${recorded} [${onChainRules.join(", ")}]; the claim is ${claim.verdict} [${claim.ruleIds.join(", ")}]`]);
   }
 
   return {
