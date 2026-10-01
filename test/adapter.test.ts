@@ -15,11 +15,15 @@ import { RULESET_VERSION } from "../src/policy/engine.ts";
 import { createPlaintextPolicyProvider, createSealedPolicyProvider, sealedCommitment } from "../src/policy/sealed.ts";
 import { createStubMxe } from "../src/mxe/stub.ts";
 import { createSolanaAdapter } from "../src/solana/adapter.ts";
+import { solanaAddress } from "../src/solana/keys.ts";
 import { SOLANA_TRANSFER_TOOL, SYSTEM_PROGRAM_ID, TOKEN_PROGRAM_ID, USDC_MAINNET_MINT, type SolanaTransfer } from "../src/solana/types.ts";
 import type { AgentState, Policy } from "../src/policy/types.ts";
 
 const AT = Date.UTC(2026, 6, 31, 12, 0, 0);
-const VAULT = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM";
+// The adapter signs for exactly one account: the vault whose key it holds.
+const VAULT_KEYS = generateKeypair();
+const VAULT = solanaAddress(VAULT_KEYS.publicKey);
+const BLOCKHASH = "EkSnNWid2cvwEVnVx9aBqawnmiCNiDgp3gUdkDPTKN1N";
 const VENDOR = "7VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE";
 const SALT = "1f9c4a2e6b8d0357f1a9c4e2b6d80357f1a9c4e2b6d80357f1a9c4e2b6d80357";
 const CIRCUIT = "genkai.policy.v1";
@@ -60,13 +64,13 @@ const transfer = (over: Partial<SolanaTransfer> = {}): SolanaTransfer => ({
 const plainAdapter = () =>
   createSolanaAdapter({
     agentId: "agent-1",
-    keys: generateKeypair(),
+    keys: VAULT_KEYS,
     provider: createPlaintextPolicyProvider(policy),
   });
 
 test("an allowed transfer is signed and produces a verifiable receipt", async () => {
   const adapter = plainAdapter();
-  const result = await adapter.submit({ transfer: transfer(), state, decidedAt: AT });
+  const result = await adapter.submit({ transfer: transfer(), state, decidedAt: AT, recentBlockhash: BLOCKHASH });
 
   assert.equal(result.decision.verdict, "allow");
   assert.ok(result.signedTransaction, "an allowed transfer must be signed");
@@ -83,6 +87,7 @@ test("a denied transfer is never signed", async () => {
     transfer: transfer({ programId: SYSTEM_PROGRAM_ID }),
     state,
     decidedAt: AT,
+    recentBlockhash: BLOCKHASH,
   });
 
   assert.equal(result.decision.verdict, "deny");
@@ -94,7 +99,12 @@ test("a denied transfer is never signed", async () => {
 
 test("an escalated transfer is not signed while awaiting a human", async () => {
   const adapter = plainAdapter();
-  const result = await adapter.submit({ transfer: transfer({ amount: 60_000_000n }), state, decidedAt: AT });
+  const result = await adapter.submit({
+    transfer: transfer({ amount: 60_000_000n }),
+    state,
+    decidedAt: AT,
+    recentBlockhash: BLOCKHASH,
+  });
 
   assert.equal(result.decision.verdict, "escalate");
   assert.equal(result.signedTransaction, undefined, "escalate is not a soft allow");
@@ -130,12 +140,18 @@ test("an agent cannot obtain a signature without a verdict", async () => {
 
 test("receipts chain across submissions", async () => {
   const adapter = plainAdapter();
-  const first = await adapter.submit({ transfer: transfer({ amount: 1_000_000n }), state, decidedAt: AT });
+  const first = await adapter.submit({
+    transfer: transfer({ amount: 1_000_000n }),
+    state,
+    decidedAt: AT,
+    recentBlockhash: BLOCKHASH,
+  });
 
   const second = await adapter.submit({
     transfer: transfer({ amount: 2_000_000n }),
     state: { ...state, spentInWindow: 1_000_000n, callsInWindow: 1 },
     decidedAt: AT,
+    recentBlockhash: BLOCKHASH,
     previousReceiptHash: hashReceiptBody(first.receipt.body),
   });
 
@@ -148,7 +164,7 @@ test("the same adapter code path works under seal", async () => {
   const mxe = createStubMxe({ policy, salt: SALT, circuitId: CIRCUIT, keys: generateKeypair() });
   const adapter = createSolanaAdapter({
     agentId: "agent-1",
-    keys: generateKeypair(),
+    keys: VAULT_KEYS,
     provider: createSealedPolicyProvider({
       commitment: sealedCommitment(policy, SALT),
       circuitId: CIRCUIT,
@@ -157,7 +173,7 @@ test("the same adapter code path works under seal", async () => {
     }),
   });
 
-  const allowed = await adapter.submit({ transfer: transfer(), state, decidedAt: AT });
+  const allowed = await adapter.submit({ transfer: transfer(), state, decidedAt: AT, recentBlockhash: BLOCKHASH });
   assert.equal(allowed.decision.verdict, "allow");
   assert.ok(allowed.signedTransaction);
   assert.ok(allowed.receipt.body.attestation, "a sealed receipt must carry its attestation");
@@ -166,6 +182,7 @@ test("the same adapter code path works under seal", async () => {
     transfer: transfer({ mint: SYSTEM_PROGRAM_ID }),
     state,
     decidedAt: AT,
+    recentBlockhash: BLOCKHASH,
   });
   assert.equal(denied.decision.verdict, "deny");
   assert.equal(denied.signedTransaction, undefined);
@@ -178,7 +195,7 @@ test("a sealed receipt cannot be replay-verified, and says so rather than failin
   const mxe = createStubMxe({ policy, salt: SALT, circuitId: CIRCUIT, keys: generateKeypair() });
   const adapter = createSolanaAdapter({
     agentId: "agent-1",
-    keys: generateKeypair(),
+    keys: VAULT_KEYS,
     provider: createSealedPolicyProvider({
       commitment: sealedCommitment(policy, SALT),
       circuitId: CIRCUIT,
@@ -187,7 +204,7 @@ test("a sealed receipt cannot be replay-verified, and says so rather than failin
     }),
   });
 
-  const result = await adapter.submit({ transfer: transfer(), state, decidedAt: AT });
+  const result = await adapter.submit({ transfer: transfer(), state, decidedAt: AT, recentBlockhash: BLOCKHASH });
   const verified = verifyReceipt(result.receipt, policy);
   assert.equal(verified.valid, false);
   assert.ok(verified.failures.includes("policy_hash_mismatch"));
@@ -196,11 +213,12 @@ test("a sealed receipt cannot be replay-verified, and says so rather than failin
 
 test("a signature commits to the exact transfer, not merely to the verdict", async () => {
   const adapter = plainAdapter();
-  const a = await adapter.submit({ transfer: transfer({ amount: 1_000_000n }), state, decidedAt: AT });
-  const b = await adapter.submit({ transfer: transfer({ amount: 2_000_000n }), state, decidedAt: AT });
+  const base = { state, decidedAt: AT, recentBlockhash: BLOCKHASH };
+  const a = await adapter.submit({ ...base, transfer: transfer({ amount: 1_000_000n }) });
+  const b = await adapter.submit({ ...base, transfer: transfer({ amount: 2_000_000n }) });
 
   assert.notEqual(a.signedTransaction, b.signedTransaction);
   // Two allowed transfers to different destinations must not share a signature either.
-  const c = await adapter.submit({ transfer: transfer({ amount: 1_000_000n, to: VAULT }), state, decidedAt: AT });
+  const c = await adapter.submit({ ...base, transfer: transfer({ amount: 1_000_000n, to: SYSTEM_PROGRAM_ID }) });
   assert.notEqual(a.signedTransaction, c.signedTransaction);
 });
