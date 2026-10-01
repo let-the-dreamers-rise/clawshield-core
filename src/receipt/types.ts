@@ -90,7 +90,12 @@ export type VerificationFailure =
   | "policy_hash_mismatch"
   | "decision_not_reproducible"
   | "chain_broken"
-  | "transaction_mismatch";
+  | "transaction_mismatch"
+  // Sealed mode only. See src/receipt/verify-sealed.ts.
+  | "commitment_mismatch"
+  | "attestation_missing"
+  | "attestation_invalid"
+  | "disclosure_leak";
 
 export interface VerificationResult {
   readonly valid: boolean;

@@ -36,7 +36,9 @@ import { evaluate } from "./engine.ts";
 import { canonicalBytes, type Canonicalisable } from "../receipt/canonical.ts";
 import { hashPolicy } from "../receipt/sign.ts";
 import type { ActionRequest, AgentState, Decision, Policy, RuleResult } from "./types.ts";
-import { attestedPayload, type MxeAttestation, type MxeClient } from "../mxe/types.ts";
+import { attestedPayload, type Disclosure, type MxeAttestation, type MxeClient } from "../mxe/types.ts";
+
+export type { Disclosure } from "../mxe/types.ts";
 
 /**
  * The reason string on every rule of a sealed decision.
@@ -49,6 +51,7 @@ export const SEALED_REASON = "withheld: sealed policy";
 export type SealedErrorCode =
   | "commitment_mismatch"
   | "circuit_mismatch"
+  | "disclosure_violation"
   | "bad_attestation";
 
 export class SealedPolicyError extends Error {
@@ -120,9 +123,13 @@ export interface SealedProviderConfig {
   /** SPKI DER, base64. Pinned by the operator out of band. */
   readonly clusterPublicKey: string;
   readonly mxe: MxeClient;
+  /** Defaults to "rules". See Disclosure in src/mxe/types.ts. */
+  readonly disclosure?: Disclosure;
 }
 
 export function createSealedPolicyProvider(config: SealedProviderConfig): PolicyProvider {
+  const disclosure: Disclosure = config.disclosure ?? "rules";
+
   async function decide(
     request: ActionRequest,
     state: AgentState,
@@ -133,6 +140,7 @@ export function createSealedPolicyProvider(config: SealedProviderConfig): Policy
       request,
       state,
       decidedAt,
+      disclosure,
     });
 
     // 1. The MXE evaluated the policy we think it did. Checked before the signature, because
@@ -152,11 +160,20 @@ export function createSealedPolicyProvider(config: SealedProviderConfig): Policy
       );
     }
 
-    // 3. The attestation verifies under the pinned cluster key, over a payload that includes
-    //    the verdict and the firing rules. This is what stops an operator sitting between the
-    //    MXE and the receipt writer from flipping deny to allow.
+    // 3. The MXE disclosed no more than it was asked to. Checked explicitly so an over-sharing
+    //    MXE is named as such, rather than surfacing as an opaque signature failure.
+    if (disclosure === "verdict" && (output.ruleIds.length > 0 || output.attestation.disclosure !== "verdict")) {
+      throw new SealedPolicyError(
+        "disclosure_violation",
+        "Verdict-only disclosure was requested but the MXE disclosed rule identifiers",
+      );
+    }
+
+    // 4. The attestation verifies under the pinned cluster key, over a payload that includes
+    //    the verdict, the firing rules and the disclosure mode. This is what stops an operator
+    //    sitting between the MXE and the receipt writer from flipping deny to allow.
     const payload = attestedPayload(
-      { policyCommitment: output.policyCommitment, request, state, decidedAt },
+      { policyCommitment: output.policyCommitment, request, state, decidedAt, disclosure },
       output.attestation.circuitId,
       output.verdict,
       output.ruleIds,

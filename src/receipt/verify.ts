@@ -20,9 +20,8 @@
  * engine can prove the log describes what the code actually did.
  */
 
-import { createPublicKey, verify as cryptoVerify } from "node:crypto";
-import { canonicalBytes, type Canonicalisable } from "./canonical.ts";
 import { evaluate } from "../policy/engine.ts";
+import { checkReceiptSignature } from "./verify-signature.ts";
 import { hashPolicy, hashReceiptBody } from "./sign.ts";
 import { checkBoundTransaction } from "./verify-transaction.ts";
 import type { Policy } from "../policy/types.ts";
@@ -42,21 +41,10 @@ export function verifyReceipt(
   const detail: string[] = [];
 
   // 1. Signature over the canonical body.
-  try {
-    const publicKey = createPublicKey({
-      key: Buffer.from(receipt.publicKey, "base64"),
-      format: "der",
-      type: "spki",
-    });
-    const message = canonicalBytes(receipt.body as unknown as Canonicalisable);
-    const ok = cryptoVerify(null, message, publicKey, Buffer.from(receipt.signature, "base64"));
-    if (!ok) {
-      failures.push("bad_signature");
-      detail.push("Ed25519 signature does not verify over the canonical receipt body");
-    }
-  } catch (err) {
+  const signatureProblem = checkReceiptSignature(receipt);
+  if (signatureProblem !== null) {
     failures.push("bad_signature");
-    detail.push(`Signature check threw: ${err instanceof Error ? err.message : String(err)}`);
+    detail.push(signatureProblem);
   }
 
   // 2. The policy supplied is the policy that was in force.

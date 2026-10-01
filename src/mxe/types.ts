@@ -18,12 +18,25 @@
 
 import type { ActionRequest, AgentState, Verdict } from "../policy/types.ts";
 
+/**
+ * How much a sealed decision reveals beyond its verdict.
+ *
+ *   rules    the verdict and the ids of the rules that fired ("mint_cap_exceeded")
+ *   verdict  the verdict alone. Not even the kind of constraint that bound is disclosed.
+ *
+ * A rule id is a smaller leak than a threshold, but it is a leak: a run of
+ * "amount_exceeds_window" denials tells an observer the desk is near its daily limit.
+ */
+export type Disclosure = "rules" | "verdict";
+
 export interface MxeEvaluationInput {
   readonly policyCommitment: string;
   readonly request: ActionRequest;
   readonly state: AgentState;
   /** Passed in, never read from a clock, for the same reason the engine does it. */
   readonly decidedAt: number;
+  /** Defaults to "rules". Bound into the attestation, so it cannot be relabelled afterwards. */
+  readonly disclosure?: Disclosure;
 }
 
 /**
@@ -41,6 +54,8 @@ export interface MxeAttestation {
   readonly clusterPublicKey: string;
   /** Ed25519 signature over the canonical attested payload, base64. */
   readonly signature: string;
+  /** Present only in verdict-only mode; absent means rules mode, so older attestations verify. */
+  readonly disclosure?: "verdict";
 }
 
 export interface MxeEvaluationOutput {
@@ -74,6 +89,7 @@ export interface AttestedPayload {
   readonly decidedAt: number;
   readonly verdict: Verdict;
   readonly ruleIds: readonly string[];
+  readonly disclosure?: "verdict";
 }
 
 export function attestedPayload(
@@ -90,5 +106,6 @@ export function attestedPayload(
     decidedAt: input.decidedAt,
     verdict,
     ruleIds,
+    disclosure: input.disclosure === "verdict" ? "verdict" : undefined,
   };
 }

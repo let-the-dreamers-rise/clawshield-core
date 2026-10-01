@@ -38,7 +38,8 @@ export function createStubMxe(config: StubMxeConfig): MxeClient {
 
   async function evaluateSealed(input: MxeEvaluationInput): Promise<MxeEvaluationOutput> {
     const decision = evaluate(config.policy, input.request, input.state, input.decidedAt);
-    const ruleIds = decision.reasons.map((r) => r.rule);
+    const verdictOnly = input.disclosure === "verdict";
+    const ruleIds = verdictOnly ? [] : decision.reasons.map((r) => r.rule);
 
     // The circuit answers for the policy it holds, not for whatever commitment it was asked
     // about. Echoing the caller's commitment back unchecked would let a caller believe a
@@ -59,6 +60,7 @@ export function createStubMxe(config: StubMxeConfig): MxeClient {
         circuitId: config.circuitId,
         clusterPublicKey,
         signature: signature.toString("base64"),
+        disclosure: verdictOnly ? "verdict" : undefined,
       },
     };
   }
