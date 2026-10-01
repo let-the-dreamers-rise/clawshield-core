@@ -1,0 +1,6 @@
+# An allowlist: the image needs package.json, the license and src/. Everything else - keys,
+# ledgers, secrets, node_modules, the session transcript - stays out of the build context.
+*
+!package.json
+!LICENSE
+!src/

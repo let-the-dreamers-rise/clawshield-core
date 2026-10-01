@@ -1,0 +1,19 @@
+# Pinned versions stay pinned and still move: the base image digest, the exact devDependencies
+# behind the browser bundle, and the actions the workflows run.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      browser-crypto:
+        patterns: ["@noble/*", "buffer", "esbuild"]
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

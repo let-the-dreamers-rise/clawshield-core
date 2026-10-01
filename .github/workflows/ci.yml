@@ -30,6 +30,8 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run test:coverage
+      - name: Build the site and hosted verifier (Vercel Build Output)
+        run: npm run --silent build:web
       - name: Offline demo, then verify its output as a stranger would
         run: |
           npm run --silent demo -- --out demo-out

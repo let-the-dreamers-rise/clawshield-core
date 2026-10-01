@@ -1,0 +1,52 @@
+# The GENKAI gateway with its ledger on a named volume and its vault key as a Docker secret.
+#
+#   1. Create the vault key, readable by the container's user (uid 1000):
+#        mkdir -p secrets && npm run --silent genkai -- keygen secrets/vault.json
+#   2. docker compose up -d
+#   3. Create the first admin key (shown once):
+#        docker compose exec gateway node --experimental-strip-types --no-warnings \
+#          src/cli/main.ts gateway-admin create-admin-key --db /data/genkai.db
+#
+# This runs the plaintext demo policy. For sealed mode on the live Arcium deployment, see
+# docs/OPERATIONS.md: mount the deployment manifest, add the policy authority's key as a second
+# secret, and set GENKAI_DEPLOYMENT_FILE, GENKAI_AUTHORITY_KEY_FILE and GENKAI_WINDOW_SECONDS.
+#
+# The port is published on loopback only. Put a TLS-terminating proxy in front before exposing
+# it, and only then set GENKAI_TRUST_PROXY=true.
+
+services:
+  gateway:
+    image: ghcr.io/let-the-dreamers-rise/genkai-gateway:main
+    build: .
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8788:8788"
+    environment:
+      GENKAI_VAULT_KEY_FILE: /run/secrets/vault_key
+      GENKAI_POLICY_FILE: /config/policy.json
+      GENKAI_CLUSTER: devnet
+      GENKAI_RPC_URL: https://api.devnet.solana.com
+      GENKAI_EXECUTION: sign
+      GENKAI_WINDOW_SECONDS: "86400"
+      GENKAI_PUBLIC_RECEIPTS: "true"
+      GENKAI_TRUST_PROXY: "false"
+    secrets:
+      - vault_key
+    volumes:
+      - genkai-data:/data
+      - ./examples/devnet/policy.json:/config/policy.json:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+secrets:
+  vault_key:
+    file: ./secrets/vault.json
+
+volumes:
+  genkai-data:
