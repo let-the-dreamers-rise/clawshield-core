@@ -46,7 +46,7 @@ jobs:
         run: scripts/smoke-gateway.sh genkai-gateway:test
 
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE }}
           tags: |
