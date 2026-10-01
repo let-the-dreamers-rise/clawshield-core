@@ -18,13 +18,18 @@
  * denials are the part of the record a regulator actually wants.
  */
 
-import { createHash, sign } from "node:crypto";
+import { createHash } from "node:crypto";
 import { canonicalBytes, type Canonicalisable } from "../receipt/canonical.ts";
 import { signReceipt, type Keypair } from "../receipt/sign.ts";
 import { RULESET_VERSION } from "../policy/engine.ts";
 import type { PolicyProvider } from "../policy/sealed.ts";
 import type { AgentState, Decision } from "../policy/types.ts";
-import type { ReceiptBody, SignedReceipt } from "../receipt/types.ts";
+import type { AuthorisedTransaction, ExecutionOutcome, ReceiptBody, SignedReceipt } from "../receipt/types.ts";
+import { ComposeError, composeTransferMessage, type TransactionFees } from "./compose.ts";
+import { SolanaAdapterError } from "./errors.ts";
+import { solanaAddress } from "./keys.ts";
+import { MessageError } from "./message.ts";
+import { signLegacyTransaction } from "./transaction.ts";
 import { toActionRequest, type SolanaTransfer } from "./types.ts";
 
 export interface SolanaAdapterConfig {
@@ -41,6 +46,12 @@ export interface SubmitOptions {
   readonly state: AgentState;
   /** Passed in rather than read from a clock, so the decision stays replayable. */
   readonly decidedAt: number;
+  /**
+   * Fetched by the caller, because fetching it is IO and the adapter does none. Bound into the
+   * receipt so a verifier can rebuild the signed message.
+   */
+  readonly recentBlockhash: string;
+  readonly fees?: TransactionFees;
   readonly previousReceiptHash?: string | null;
   /** Recorded for accountability. Never consulted for enforcement. */
   readonly modelReasoning?: string;
@@ -49,7 +60,10 @@ export interface SubmitOptions {
 export interface SolanaSubmission {
   readonly decision: Decision;
   readonly receipt: SignedReceipt;
-  /** Present only when the verdict was allow. Absent for deny and for escalate alike. */
+  /**
+   * The base64 wire transaction, ready to broadcast. Present only when the verdict was allow
+   * and the transfer could be encoded. Absent for deny and for escalate alike.
+   */
   readonly signedTransaction?: string;
 }
 
@@ -73,24 +87,53 @@ export function createSolanaAdapter(config: SolanaAdapterConfig): SolanaAdapter 
   // Captured here and never referenced from anything the caller can reach.
   const keys = config.keys;
   const publicKey = keys.publicKey.export({ type: "spki", format: "der" }).toString("base64");
+  const vaultAddress = solanaAddress(keys.publicKey);
+
+  interface Signed {
+    readonly wire: string;
+    readonly transaction: AuthorisedTransaction;
+  }
 
   /**
-   * Sign the transfer itself.
+   * Build and sign the real transaction for an authorised transfer.
    *
-   * Interim note, stated rather than hidden: this signs the canonical form of the transfer,
-   * not a serialised Solana transaction message. Building a real message means recent
-   * blockhash fetching and instruction encoding, which is IO and a wire format, and neither
-   * belongs in the same commit as the authority model. The signature already commits to the
-   * destination, mint, amount, program and cluster, so the property under test - that a
-   * signature covers the exact transfer that was authorised, and exists only after an allow -
-   * is the property that will carry over unchanged when the message encoder lands.
+   * A transfer the policy allowed but the encoder cannot build - a program with no encoder, an
+   * oversized message - returns an error string instead of throwing. The decision was taken
+   * and must still be evidenced; what failed was construction, and the receipt says so.
    */
-  function signAuthorisedTransfer(receiptId: string, transfer: SolanaTransfer): string {
-    const message = canonicalBytes({ receiptId, transfer } as unknown as Canonicalisable);
-    return sign(null, message, keys.privateKey).toString("base64");
+  function signAuthorisedTransfer(receiptId: string, options: SubmitOptions): Signed | string {
+    try {
+      const message = composeTransferMessage(options.transfer, {
+        recentBlockhash: options.recentBlockhash,
+        receiptId,
+        ...options.fees,
+      });
+      const signed = signLegacyTransaction(message, keys);
+      return {
+        wire: Buffer.from(signed.wire).toString("base64"),
+        transaction: {
+          signature: signed.signature,
+          messageSha256: createHash("sha256").update(message).digest("hex"),
+          recentBlockhash: options.recentBlockhash,
+          computeUnitLimit: options.fees?.computeUnitLimit,
+          computeUnitPrice: options.fees?.computeUnitPrice,
+        },
+      };
+    } catch (err) {
+      if (err instanceof ComposeError || err instanceof MessageError) return err.message;
+      throw err;
+    }
   }
 
   async function submit(options: SubmitOptions): Promise<SolanaSubmission> {
+    // Not a policy question: this adapter cannot produce a valid signature for any other
+    // account, so a request naming one is malformed rather than deniable.
+    if (options.transfer.from !== vaultAddress) {
+      throw new SolanaAdapterError(
+        "signer_mismatch",
+        `This adapter signs for ${vaultAddress}; the transfer names ${options.transfer.from}`,
+      );
+    }
     const request = toActionRequest(options.transfer, config.agentId);
     const previousReceiptHash = options.previousReceiptHash ?? null;
 
@@ -109,8 +152,13 @@ export function createSolanaAdapter(config: SolanaAdapterConfig): SolanaAdapter 
       previousReceiptHash,
     } as unknown as Canonicalisable);
 
-    const signedTransaction =
-      decision.verdict === "allow" ? signAuthorisedTransfer(receiptId, options.transfer) : undefined;
+    const signed = decision.verdict === "allow" ? signAuthorisedTransfer(receiptId, options) : undefined;
+    const built = typeof signed === "object" ? signed : undefined;
+    // Signed, not broadcast. Submission to a cluster is a separate step with its own failure
+    // modes, and conflating the two would let a receipt assert an on-chain effect that never
+    // happened. Whether the transaction landed is checked against the chain by its id.
+    const outcome: ExecutionOutcome =
+      typeof signed === "string" ? { executed: false, error: signed } : { executed: false };
 
     const body: ReceiptBody = {
       receiptId,
@@ -122,17 +170,15 @@ export function createSolanaAdapter(config: SolanaAdapterConfig): SolanaAdapter 
       modelReasoning: options.modelReasoning,
       rulesetVersion: RULESET_VERSION,
       attestation,
-      // Signed, not broadcast. Submission to a cluster is a separate step with its own failure
-      // modes, and conflating the two would let a receipt assert an on-chain effect that never
-      // happened. executed flips to true only when a confirmed signature comes back.
-      outcome: { executed: false },
+      transaction: built?.transaction,
+      outcome,
       previousReceiptHash,
     };
 
     return Object.freeze({
       decision,
       receipt: signReceipt(body, keys),
-      signedTransaction,
+      signedTransaction: built?.wire,
     });
   }
 

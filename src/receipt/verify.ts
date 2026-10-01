@@ -13,6 +13,8 @@
  *   2. the policy hash in the receipt matches the policy supplied
  *   3. replaying the engine on the recorded request and state reproduces the recorded verdict
  *   4. the receipt chains correctly to its predecessor
+ *   5. any bound transaction is the fee payer's signature over the message rebuilt from the
+ *      evaluated request, so the signed bytes move exactly what the policy saw
  *
  * Check 3 is the one competitors cannot offer. Anyone can sign a log. Only a deterministic
  * engine can prove the log describes what the code actually did.
@@ -22,6 +24,7 @@ import { createPublicKey, verify as cryptoVerify } from "node:crypto";
 import { canonicalBytes, type Canonicalisable } from "./canonical.ts";
 import { evaluate } from "../policy/engine.ts";
 import { hashPolicy, hashReceiptBody } from "./sign.ts";
+import { checkBoundTransaction } from "./verify-transaction.ts";
 import type { Policy } from "../policy/types.ts";
 import type { SignedReceipt, VerificationFailure, VerificationResult } from "./types.ts";
 
@@ -94,6 +97,13 @@ export function verifyReceipt(
         `Receipt points at previous ${receipt.body.previousReceiptHash} but ${options.expectedPreviousHash} was expected`,
       );
     }
+  }
+
+  // 5. The signed transaction is the one the policy evaluated.
+  const transactionProblem = checkBoundTransaction(receipt.body);
+  if (transactionProblem !== null) {
+    failures.push("transaction_mismatch");
+    detail.push(transactionProblem);
   }
 
   return { valid: failures.length === 0, failures, detail };

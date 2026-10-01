@@ -140,7 +140,8 @@ test("execution is verified from the chain against the receipt, not from the ope
   // The chain holds a different transaction under the receipt's signature.
   const signature = submission.receipt.body.transaction?.signature ?? "";
   const tampered = new Uint8Array(chain.wires.get(signature) ?? []);
-  tampered[tampered.length - 1] ^= 1;
+  const last = tampered.length - 1;
+  tampered[last] = (tampered[last] ?? 0) ^ 1;
   chain.wires.set(signature, tampered);
   const bad = await verifyExecution(submission.receipt, chain.rpc);
   assert.equal(bad.executed, false);

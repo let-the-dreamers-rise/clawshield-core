@@ -26,6 +26,22 @@ export interface ExecutionOutcome {
   readonly error?: string;
 }
 
+/**
+ * The transaction an allow verdict authorised, bound into the receipt.
+ *
+ * Everything needed to rebuild the signed message from the evaluated request is here, so a
+ * verifier never has to trust that the signature covers what the operator says it covers.
+ */
+export interface AuthorisedTransaction {
+  /** Base58 fee-payer signature: the transaction id on chain. */
+  readonly signature: string;
+  /** SHA-256 of the signed message bytes, hex. */
+  readonly messageSha256: string;
+  readonly recentBlockhash: string;
+  readonly computeUnitLimit?: number;
+  readonly computeUnitPrice?: bigint;
+}
+
 export interface ReceiptBody {
   readonly receiptId: string;
   readonly schemaVersion: 1;
@@ -51,6 +67,11 @@ export interface ReceiptBody {
    * allowed to see, so it checks this instead. See src/policy/sealed.ts.
    */
   readonly attestation?: MxeAttestation;
+  /**
+   * Present only when the verdict was allow and a transaction was signed. Optional, so every
+   * receipt issued before it existed hashes and verifies exactly as it did.
+   */
+  readonly transaction?: AuthorisedTransaction;
   /** Hash of the previous receipt for this agent, forming a tamper-evident chain. */
   readonly previousReceiptHash: string | null;
 }
@@ -68,7 +89,8 @@ export type VerificationFailure =
   | "bad_signature"
   | "policy_hash_mismatch"
   | "decision_not_reproducible"
-  | "chain_broken";
+  | "chain_broken"
+  | "transaction_mismatch";
 
 export interface VerificationResult {
   readonly valid: boolean;
