@@ -32,6 +32,18 @@ import { MessageError } from "./message.ts";
 import { signLegacyTransaction } from "./transaction.ts";
 import { toActionRequest, type SolanaTransfer } from "./types.ts";
 
+/**
+ * Failure text goes into a signed receipt and can come from a remote server, so it is bounded:
+ * the receipt schema refuses strings over 4096, and a receipt no verifier accepts is no evidence.
+ */
+const MAX_ERROR_CHARS = 500;
+
+/** Cut by code point, so a surrogate pair is never split into an ill-formed string. */
+function bounded(text: string): string {
+  const chars = [...text];
+  return chars.length <= MAX_ERROR_CHARS ? text : `${chars.slice(0, MAX_ERROR_CHARS).join("")}...`;
+}
+
 export interface SolanaAdapterConfig {
   readonly agentId: string;
   /** Held in closure scope from here on. Never stored on the returned object. */
@@ -47,10 +59,14 @@ export interface SubmitOptions {
   /** Passed in rather than read from a clock, so the decision stays replayable. */
   readonly decidedAt: number;
   /**
-   * Fetched by the caller, because fetching it is IO and the adapter does none. Bound into the
-   * receipt so a verifier can rebuild the signed message.
+   * Supplied by the caller, who owns the IO. Bound into the receipt so a verifier can rebuild
+   * the signed message.
+   *
+   * Pass a function to have it called only on an allow, after the verdict. Under seal a
+   * decision waits on the MPC cluster, and a blockhash fetched before it would age by that
+   * whole wait; Solana stops accepting a blockhash after about 150 blocks.
    */
-  readonly recentBlockhash: string;
+  readonly recentBlockhash: string | (() => Promise<string>);
   readonly fees?: TransactionFees;
   readonly previousReceiptHash?: string | null;
   /** Recorded for accountability. Never consulted for enforcement. */
@@ -101,10 +117,10 @@ export function createSolanaAdapter(config: SolanaAdapterConfig): SolanaAdapter 
    * oversized message - returns an error string instead of throwing. The decision was taken
    * and must still be evidenced; what failed was construction, and the receipt says so.
    */
-  function signAuthorisedTransfer(receiptId: string, options: SubmitOptions): Signed | string {
+  function signAuthorisedTransfer(receiptId: string, options: SubmitOptions, recentBlockhash: string): Signed | string {
     try {
       const message = composeTransferMessage(options.transfer, {
-        recentBlockhash: options.recentBlockhash,
+        recentBlockhash,
         receiptId,
         ...options.fees,
       });
@@ -114,7 +130,7 @@ export function createSolanaAdapter(config: SolanaAdapterConfig): SolanaAdapter 
         transaction: {
           signature: signed.signature,
           messageSha256: createHash("sha256").update(message).digest("hex"),
-          recentBlockhash: options.recentBlockhash,
+          recentBlockhash,
           computeUnitLimit: options.fees?.computeUnitLimit,
           computeUnitPrice: options.fees?.computeUnitPrice,
         },
@@ -122,6 +138,20 @@ export function createSolanaAdapter(config: SolanaAdapterConfig): SolanaAdapter 
     } catch (err) {
       if (err instanceof ComposeError || err instanceof MessageError) return err.message;
       throw err;
+    }
+  }
+
+  /**
+   * The blockhash for an allowed transfer. A fetch that fails after the verdict is reported like
+   * a transfer that cannot be built: the decision was taken, and under seal already recorded on
+   * chain, so it is evidenced with the reason rather than lost.
+   */
+  async function blockhashFor(source: SubmitOptions["recentBlockhash"]): Promise<string | { readonly error: string }> {
+    if (typeof source === "string") return source;
+    try {
+      return await source();
+    } catch (err) {
+      return { error: `No recent blockhash: ${err instanceof Error ? err.message : String(err)}` };
     }
   }
 
@@ -152,13 +182,14 @@ export function createSolanaAdapter(config: SolanaAdapterConfig): SolanaAdapter 
       previousReceiptHash,
     } as unknown as Canonicalisable);
 
-    const signed = decision.verdict === "allow" ? signAuthorisedTransfer(receiptId, options) : undefined;
+    const blockhash = decision.verdict === "allow" ? await blockhashFor(options.recentBlockhash) : undefined;
+    const signed = typeof blockhash === "string" ? signAuthorisedTransfer(receiptId, options, blockhash) : blockhash?.error;
     const built = typeof signed === "object" ? signed : undefined;
     // Signed, not broadcast. Submission to a cluster is a separate step with its own failure
     // modes, and conflating the two would let a receipt assert an on-chain effect that never
     // happened. Whether the transaction landed is checked against the chain by its id.
     const outcome: ExecutionOutcome =
-      typeof signed === "string" ? { executed: false, error: signed } : { executed: false };
+      typeof signed === "string" ? { executed: false, error: bounded(signed) } : { executed: false };
 
     const body: ReceiptBody = {
       receiptId,

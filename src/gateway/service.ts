@@ -8,7 +8,8 @@
  *   2. reads the agent's ledger and rolls the spend window as of now
  *   3. builds the transfer itself: the vault, cluster and time come from the gateway, never
  *      from the agent, so an agent cannot spend from another account or backdate a request
- *   4. asks the policy provider through the signing adapter, which signs only on allow
+ *   4. asks the policy provider through the signing adapter, which signs only on allow, with a
+ *      blockhash fetched after the verdict so a slow sealed decision cannot leave it stale
  *   5. records the receipt and advances the ledger in one transaction
  *   6. in broadcast mode, submits the signed transaction and records the signature
  *
@@ -82,6 +83,8 @@ export function createGatewayService(config: GatewayServiceConfig) {
   const now = config.now ?? (() => Date.now());
   const mutex = createKeyedMutex(config.maxQueuedPerAgent);
   const vaultAddress = solanaAddress(config.vault.publicKey);
+  const rpc = config.rpc;
+  const latestBlockhash = rpc ? async () => (await rpc.getLatestBlockhash("confirmed")).blockhash : OFFLINE_BLOCKHASH;
 
   function transferOf(input: TransferInput, requestedAt: number): SolanaTransfer {
     return {
@@ -116,23 +119,25 @@ export function createGatewayService(config: GatewayServiceConfig) {
 
     const at = now();
     const state = stateAt({ ...ledger.state, revoked: agent.revoked }, config.windowSeconds, at);
-    const recentBlockhash = config.rpc ? (await config.rpc.getLatestBlockhash("confirmed")).blockhash : OFFLINE_BLOCKHASH;
     const adapter = createSolanaAdapter({ agentId, keys: config.vault, provider: config.provider });
     const submission = await adapter.submit({
       transfer: transferOf(input, at),
       state,
       decidedAt: at,
-      recentBlockhash,
+      recentBlockhash: latestBlockhash,
       fees: config.fees,
       previousReceiptHash: ledger.lastReceiptHash,
       modelReasoning,
     });
 
     const verdict = submission.decision.verdict;
+    // Only a signed transaction can move funds. An allow that could not be signed is still a
+    // decision, and so a call, but it charges nothing to the window.
+    const spent = submission.signedTransaction === undefined ? undefined : input.amount;
     const seq = config.store.commitDecision({
       agentId,
       expectedVersion: ledger.version,
-      nextState: afterDecision(state, verdict, input.amount),
+      nextState: afterDecision(state, verdict, spent),
       receipt: submission.receipt,
       signedTransaction: submission.signedTransaction,
       now: at,

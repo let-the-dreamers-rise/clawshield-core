@@ -11,6 +11,7 @@
  *     probe a sealed policy with denied requests forever, with no rate limit ever binding.
  *   - only an allow spends, and only a positive amount. A negative amount must never credit the
  *     window back; the engine already denies it, and this keeps the ledger honest regardless.
+ *     The gateway passes no amount for an allow it could not sign, since that moves nothing.
  */
 
 import type { AgentState, Verdict } from "../policy/types.ts";

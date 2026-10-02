@@ -1,8 +1,9 @@
 /**
  * Broadcast and confirmation.
  *
- * The executor is the only component that talks to a cluster, and it holds no key. It fetches
- * a blockhash, asks the adapter for a decision, and broadcasts only what the adapter signed.
+ * The executor is the only component that talks to a cluster, and it holds no key. It asks the
+ * adapter for a decision, fetches a blockhash only for an allow, and broadcasts only what the
+ * adapter signed.
  * Whether a transfer executed is then a fact the chain records, checkable by anyone, rather
  * than a claim the operator writes into a receipt.
  */
@@ -115,6 +116,40 @@ test("a denied transfer never reaches the cluster", async () => {
   assert.equal(result.submission.decision.verdict, "deny");
   assert.equal(chain.sent.length, 0);
   assert.equal(result.execution, undefined);
+});
+
+test("the blockhash is fetched once the verdict is in, and only for an allow", async () => {
+  // Under seal the verdict is an MPC round trip; a blockhash fetched before it would age by that
+  // whole wait, and Solana stops accepting one after about 150 blocks.
+  const order: string[] = [];
+  const chain = fakeChain();
+  const plaintext = createPlaintextPolicyProvider(policy);
+  const recording = createSolanaAdapter({ agentId: "agent-1", keys: KEYS, provider: { ...plaintext, decide: async (...args) => {
+    const decided = await plaintext.decide(...args);
+    order.push("decided");
+    return decided;
+  } } });
+  const rpc: RpcClient = { ...chain.rpc, getLatestBlockhash: async (c) => {
+    order.push("blockhash");
+    return chain.rpc.getLatestBlockhash(c);
+  } };
+  const executor = createExecutor({ adapter: recording, rpc, now: () => AT, sleep: async () => {}, pollIntervalMs: 1 });
+
+  assert.equal((await executor.execute({ transfer: transfer(1_000n), state })).execution?.status, "confirmed");
+  assert.deepEqual(order, ["decided", "blockhash"]);
+
+  order.length = 0;
+  assert.equal((await executor.execute({ transfer: transfer(2_000_000_000n), state })).submission.decision.verdict, "deny");
+  assert.deepEqual(order, ["decided"]);
+
+  // A fetch that fails after an allow leaves the decision evidenced and nothing sent.
+  const down = createExecutor({ adapter, rpc: { ...chain.rpc, getLatestBlockhash: async () => { throw new Error("HTTP 503"); } }, now: () => AT, sleep: async () => {} });
+  const sent = chain.sent.length;
+  const unsigned = await down.execute({ transfer: transfer(1_000n), state });
+  assert.equal(unsigned.submission.decision.verdict, "allow");
+  assert.equal(unsigned.execution, undefined);
+  assert.equal(unsigned.submission.receipt.body.outcome?.error, "No recent blockhash: HTTP 503");
+  assert.equal(chain.sent.length, sent);
 });
 
 test("a transaction that outlives its blockhash is reported as expired, not pending forever", async () => {

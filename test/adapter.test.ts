@@ -9,6 +9,8 @@
 
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
+import { fromJson, toJson } from "../src/io/json.ts";
+import { parseSignedReceipt } from "../src/io/schema.ts";
 import { generateKeypair, hashPolicy, hashReceiptBody } from "../src/receipt/sign.ts";
 import { verifyChain, verifyReceipt } from "../src/receipt/verify.ts";
 import { RULESET_VERSION } from "../src/policy/engine.ts";
@@ -79,6 +81,70 @@ test("an allowed transfer is signed and produces a verifiable receipt", async ()
 
   const verified = verifyReceipt(result.receipt, policy);
   assert.equal(verified.valid, true, verified.detail.join("; "));
+});
+
+test("the blockhash is fetched after the verdict, so a slow decision cannot leave the transaction stale", async () => {
+  const order: string[] = [];
+  const slowProvider = createPlaintextPolicyProvider(policy);
+  const adapter = createSolanaAdapter({
+    agentId: "agent-1",
+    keys: VAULT_KEYS,
+    provider: {
+      ...slowProvider,
+      decide: async (...args: Parameters<typeof slowProvider.decide>) => {
+        order.push("decide");
+        return slowProvider.decide(...args);
+      },
+    },
+  });
+  const latest = async () => {
+    order.push("blockhash");
+    return BLOCKHASH;
+  };
+
+  const allowed = await adapter.submit({ transfer: transfer(), state, decidedAt: AT, recentBlockhash: latest });
+  assert.deepEqual(order, ["decide", "blockhash"]);
+  assert.equal(allowed.receipt.body.transaction?.recentBlockhash, BLOCKHASH);
+  assert.equal(verifyReceipt(allowed.receipt, policy).valid, true);
+
+  // A refusal signs nothing, so it needs no blockhash and makes no call for one.
+  order.length = 0;
+  const denied = await adapter.submit({ transfer: transfer({ programId: SYSTEM_PROGRAM_ID }), state, decidedAt: AT, recentBlockhash: latest });
+  assert.equal(denied.decision.verdict, "deny");
+  assert.deepEqual(order, ["decide"]);
+});
+
+test("an allow whose blockhash cannot be fetched is evidenced, not lost", async () => {
+  const adapter = plainAdapter();
+  const result = await adapter.submit({
+    transfer: transfer(),
+    state,
+    decidedAt: AT,
+    recentBlockhash: async () => {
+      throw new Error("getLatestBlockhash failed after 4 attempt(s): HTTP 503");
+    },
+  });
+  assert.equal(result.decision.verdict, "allow");
+  assert.equal(result.signedTransaction, undefined);
+  assert.equal(result.receipt.body.transaction, undefined);
+  assert.match(result.receipt.body.outcome?.error ?? "", /^No recent blockhash: getLatestBlockhash failed/);
+  assert.equal(verifyReceipt(result.receipt, policy).valid, true, "the decision itself still verifies");
+
+  // The message can be a server's text, and its length is not ours to trust. Unbounded, a long
+  // one would yield a receipt the schema, and so every verifier, refuses.
+  const noisy = await adapter.submit({
+    transfer: transfer(),
+    state,
+    decidedAt: AT,
+    recentBlockhash: async () => {
+      throw new Error(`getLatestBlockhash: ${"\u{10348}x".repeat(5_000)}`);
+    },
+  });
+  const error = noisy.receipt.body.outcome?.error ?? "";
+  assert.ok(error.length <= 1_024, `the error is ${error.length} characters`);
+  assert.doesNotMatch(error, /\p{Cs}/u, "no surrogate pair is cut in half");
+  const reloaded = parseSignedReceipt(fromJson(toJson(noisy.receipt as never)));
+  assert.equal(verifyReceipt(reloaded, policy).valid, true);
 });
 
 test("a denied transfer is never signed", async () => {

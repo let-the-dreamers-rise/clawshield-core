@@ -49,13 +49,13 @@ function slow(provider: PolicyProvider, ms: number): PolicyProvider {
   } };
 }
 
-function setup(over: { rpc?: RpcClient; execution?: "sign" | "broadcast"; maxQueued?: number } = {}) {
+function setup(over: { rpc?: RpcClient; execution?: "sign" | "broadcast"; maxQueued?: number; provider?: PolicyProvider } = {}) {
   const db = openDatabase(":memory:");
   const store = createStore(db);
   store.createAgent({ id: "bot", label: "bot", now: T0 });
   const service = createGatewayService({
     store,
-    provider: slow(createPlaintextPolicyProvider(policy), 15),
+    provider: over.provider ?? slow(createPlaintextPolicyProvider(policy), 15),
     vault: generateKeypair(),
     cluster: "devnet",
     windowSeconds: 3600,
@@ -117,6 +117,54 @@ test("broadcast mode records the decision first, then delivers it", async () => 
   assert.equal((await service.decide("bot", { ...pay(1_000n), to: solanaAddress(generateKeypair().publicKey) })).decision.verdict, "deny");
   assert.equal(sent.length, before);
   assert.throws(() => createGatewayService({ store, provider: createPlaintextPolicyProvider(policy), vault: generateKeypair(), cluster: "devnet", execution: "broadcast" }), /RPC/);
+  db.close();
+});
+
+test("the blockhash is fetched after the verdict, and an allow that could not be signed spends nothing", async () => {
+  // A sealed verdict can take longer than a blockhash stays valid, so the gateway must not
+  // fetch one before asking.
+  const order: string[] = [];
+  let rpcDown = false;
+  const plaintext = slow(createPlaintextPolicyProvider(policy), 15);
+  const provider: PolicyProvider = { ...plaintext, decide: async (...args) => {
+    const decided = await plaintext.decide(...args);
+    order.push("decided");
+    return decided;
+  } };
+  const rpc = {
+    getLatestBlockhash: async () => {
+      order.push("blockhash");
+      if (rpcDown) throw new Error("getLatestBlockhash failed after 4 attempt(s): HTTP 503");
+      return { blockhash: "EkSnNWid2cvwEVnVx9aBqawnmiCNiDgp3gUdkDPTKN1N", lastValidBlockHeight: 9 };
+    },
+    sendTransaction: async () => "5".repeat(88),
+  } as unknown as RpcClient;
+  const { db, store, service } = setup({ rpc, execution: "broadcast", provider });
+
+  assert.equal((await service.decide("bot", pay(1_000n))).submittedSignature, "5".repeat(88));
+  assert.deepEqual(order, ["decided", "blockhash"]);
+
+  // A refusal signs nothing, so it never asks for a blockhash.
+  order.length = 0;
+  assert.equal((await service.decide("bot", { ...pay(1_000n), to: solanaAddress(generateKeypair().publicKey) })).decision.verdict, "deny");
+  assert.deepEqual(order, ["decided"]);
+
+  // By the time the fetch fails the verdict exists (under seal it is already on chain), so it
+  // is recorded with the reason. Nothing was signed: nothing is sent and the window is not charged.
+  rpcDown = true;
+  const unsigned = await service.decide("bot", pay(1_000n));
+  assert.equal(unsigned.decision.verdict, "allow");
+  assert.equal(unsigned.signedTransaction, undefined);
+  assert.equal(unsigned.submittedSignature, undefined);
+  assert.match(unsigned.receipt.body.outcome?.error ?? "", /^No recent blockhash: getLatestBlockhash failed/);
+  assert.ok(store.getReceipt(unsigned.receipt.body.receiptId));
+  const ledger = store.getLedger("bot");
+  assert.equal(ledger?.state.spentInWindow, 1_000n, "only the signed allow is charged");
+  assert.equal(ledger?.state.callsInWindow, 3, "every decision is a call");
+
+  const chain = store.listReceipts("bot", { afterSeq: 0, limit: 10 }).items.map((r) => r.receipt);
+  const check = verifyChain(chain, () => policy);
+  assert.equal(check.valid, true, check.detail.join("; "));
   db.close();
 });
 
