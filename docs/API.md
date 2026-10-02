@@ -179,9 +179,14 @@ A denial or an escalation is a `200` too, with its receipt and no transaction. I
 mode an allow also carries `submittedSignature`, or `submitError` if delivery failed. The
 decision stands and is recorded either way, and the signed transaction can be resubmitted.
 
+The blockhash is fetched after the verdict, and only for an allow, so the seconds a sealed
+decision spends on the MPC cluster do not come out of the transaction's validity window. If
+that fetch fails, the allow is still recorded but carries no `signedTransaction`, and the
+receipt's `outcome.error` says why. Ask again for a fresh decision.
+
 **Ledger semantics.** The spend window rolls on the server clock (`GENKAI_WINDOW_SECONDS`, or
 the policy's `windowSeconds`). Every decision counts toward `maxCallsPerWindow`; only an allow
-adds to the window's spend. Decisions for one agent are serialised, and each commits its receipt
+that produced a signed transaction adds to the window's spend, since nothing else can move funds. Decisions for one agent are serialised, and each commits its receipt
 and the ledger advance in one transaction before any broadcast.
 
 ### Walkthrough

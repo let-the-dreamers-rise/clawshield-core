@@ -80,7 +80,10 @@ fixed message that never quotes the file.
 
 Boot checks that the authority key is the manifest's authority before anything is sent. Each
 decision then queues an Arcium computation and waits for the cluster's callback, so it costs
-the authority a transaction fee and takes seconds rather than milliseconds.
+the authority a transaction fee and takes seconds rather than milliseconds: 5 to 38 seconds in
+the devnet run in [`examples/devnet/gateway`](../examples/devnet/gateway), and the client gives
+up after 180. Give a proxy in front of the gateway a read timeout above that. The blockhash is
+fetched once the verdict is in, so that wait does not shorten the signed transaction's life.
 
 ## Keys and access
 
