@@ -14,6 +14,7 @@ export const DEVNET_RPC = "https://api.devnet.solana.com";
 const text = (path: string): string => readFileSync(join(ROOT, path), "utf8");
 
 export const SEALED_RECEIPTS = text("examples/devnet/sealed-receipts.json");
+export const GATEWAY_RECEIPTS = text("examples/devnet/gateway/receipts.json");
 export const TRUST = text("examples/devnet/trust.json");
 export const PLAINTEXT_RECEIPTS = text("examples/devnet/plaintext-receipts.json");
 export const POLICY = text("examples/devnet/policy.json");
@@ -27,7 +28,13 @@ export interface FixtureAccount {
   readonly data: string;
 }
 
-export const ACCOUNTS = (JSON.parse(text("test/fixtures/devnet-accounts.json")) as { accounts: Record<string, FixtureAccount> }).accounts;
+const FIXTURE = JSON.parse(text("test/fixtures/devnet-accounts.json")) as {
+  readonly accounts: Readonly<Record<string, FixtureAccount>>;
+  readonly landed: Readonly<Record<string, number>>;
+};
+export const ACCOUNTS = FIXTURE.accounts;
+/** The transactions the snapshot found finalized on chain: signature to slot. */
+export const LANDED = FIXTURE.landed;
 
 export interface FixtureOptions {
   readonly accounts?: Readonly<Record<string, FixtureAccount>>;

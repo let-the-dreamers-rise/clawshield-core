@@ -15,6 +15,7 @@ import { DEFAULT_RPC, verifyDocuments } from "./verify.ts";
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
 const SAMPLES = {
+  gateway: { receipts: "/examples/devnet/gateway/receipts.json", anchor: "/examples/devnet/trust.json" },
   sealed: { receipts: "/examples/devnet/sealed-receipts.json", anchor: "/examples/devnet/trust.json" },
   plaintext: { receipts: "/examples/devnet/plaintext-receipts.json", anchor: "/examples/devnet/policy.json" },
 } as const;
@@ -60,7 +61,7 @@ async function runVerification(note?: string): Promise<void> {
 }
 
 async function loadSample(sample: Sample): Promise<void> {
-  const source = sample === "plaintext" ? SAMPLES.plaintext : SAMPLES.sealed;
+  const source = sample === "tamper" ? SAMPLES.gateway : SAMPLES[sample];
   setBusy(true);
   renderPending("Loading the devnet sample…");
   try {

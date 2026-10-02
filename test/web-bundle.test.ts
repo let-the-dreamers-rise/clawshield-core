@@ -25,7 +25,7 @@ import { createRpcClient } from "../src/solana/rpc.ts";
 import { checkDeployment } from "../web/src/deployment.ts";
 import { rewriteFirstDenial } from "../web/src/tamper.ts";
 import { verifyDocuments, type VerifyRequest } from "../web/src/verify.ts";
-import { DEVNET_RPC, MANIFEST, PLAINTEXT_RECEIPTS, POLICY, ROOT, SEALED_RECEIPTS, TRUST, devnetFetch } from "./helpers/devnet.ts";
+import { DEVNET_RPC, GATEWAY_RECEIPTS, LANDED, MANIFEST, PLAINTEXT_RECEIPTS, POLICY, ROOT, SEALED_RECEIPTS, TRUST, devnetFetch } from "./helpers/devnet.ts";
 
 interface BundledApi {
   verifyDocuments(request: VerifyRequest): Promise<unknown>;
@@ -77,19 +77,24 @@ before(async () => {
 
 const requests: Readonly<Record<string, VerifyRequest>> = {
   sealed: { receipts: SEALED_RECEIPTS, anchor: TRUST, rpcEndpoint: DEVNET_RPC },
-  forged: { receipts: rewriteFirstDenial(SEALED_RECEIPTS).text, anchor: TRUST, rpcEndpoint: DEVNET_RPC },
+  gateway: { receipts: GATEWAY_RECEIPTS, anchor: TRUST, rpcEndpoint: DEVNET_RPC },
+  forged: { receipts: rewriteFirstDenial(GATEWAY_RECEIPTS).text, anchor: TRUST, rpcEndpoint: DEVNET_RPC },
   plaintext: { receipts: PLAINTEXT_RECEIPTS, anchor: POLICY, rpcEndpoint: DEVNET_RPC },
   unchecked: { receipts: SEALED_RECEIPTS, anchor: TRUST },
 };
 
 test("the browser bundle needs no Node globals and reaches the same answers as Node", async () => {
   for (const [name, request] of Object.entries(requests)) {
-    const inBrowser = plain(await bundle.api.verifyDocuments({ ...request, fetch: devnetFetch() }));
-    const inNode = plain(await verifyDocuments({ ...request, fetch: devnetFetch() }));
+    const inBrowser = plain(await bundle.api.verifyDocuments({ ...request, fetch: devnetFetch({ landed: LANDED }) }));
+    const inNode = plain(await verifyDocuments({ ...request, fetch: devnetFetch({ landed: LANDED }) }));
     assert.deepEqual(inBrowser, inNode, name);
   }
-  const valid = plain(await bundle.api.verifyDocuments({ ...requests["sealed"]!, fetch: devnetFetch() })) as { valid: boolean };
-  assert.equal(valid.valid, true, "the bundle verifies the devnet run, not merely agrees with Node about it");
+  const gateway = plain(await bundle.api.verifyDocuments({ ...requests["gateway"]!, fetch: devnetFetch({ landed: LANDED }) })) as {
+    valid: boolean;
+    rows: { transactionStatus?: { state: string } }[];
+  };
+  assert.equal(gateway.valid, true, "the bundle verifies the devnet run, not merely agrees with Node about it");
+  assert.deepEqual(gateway.rows.map((r) => r.transactionStatus?.state), ["landed", undefined, undefined, undefined, "landed"]);
 });
 
 test("the bundle reads the deployment from chain state as Node does", async () => {
@@ -110,7 +115,7 @@ after(() => rmSync(out, { recursive: true, force: true }));
 test("the Vercel build serves the page with its headers and the API as raw-stream functions", async () => {
   const appBytes = await buildWeb(out);
   assert.ok(appBytes > 10_000 && appBytes < 400_000, `app.js is ${appBytes} bytes`);
-  for (const file of ["index.html", "app.js", "app.js.map", "styles.css", "favicon.svg", "deployment.json", "examples/devnet/sealed-receipts.json", "examples/devnet/trust.json"]) {
+  for (const file of ["index.html", "app.js", "app.js.map", "styles.css", "favicon.svg", "deployment.json", "examples/devnet/sealed-receipts.json", "examples/devnet/gateway/receipts.json", "examples/devnet/gateway/run.json", "examples/devnet/trust.json"]) {
     assert.ok(existsSync(join(out, "static", file)), file);
   }
   const site = JSON.parse(readFileSync(join(out, "config.json"), "utf8")) as { version: number; routes: { headers?: Record<string, string> }[] };

@@ -30,6 +30,8 @@ const STATIC_FILES: readonly (readonly [string, string])[] = [
   ["web/favicon.svg", "favicon.svg"],
   ["arcium/genkai/deployments/devnet.json", "deployment.json"],
   ["examples/devnet/sealed-receipts.json", "examples/devnet/sealed-receipts.json"],
+  ["examples/devnet/gateway/receipts.json", "examples/devnet/gateway/receipts.json"],
+  ["examples/devnet/gateway/run.json", "examples/devnet/gateway/run.json"],
   ["examples/devnet/trust.json", "examples/devnet/trust.json"],
   ["examples/devnet/plaintext-receipts.json", "examples/devnet/plaintext-receipts.json"],
   ["examples/devnet/policy.json", "examples/devnet/policy.json"],

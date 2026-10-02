@@ -1,5 +1,5 @@
 {
-  "note": "Snapshot of the devnet accounts the receipts in examples/devnet point at, for offline tests. Public chain state.",
+  "note": "Snapshot of the devnet accounts the receipts in examples/devnet point at, and which of their transactions landed, for offline tests. Public chain state. Refresh with scripts/snapshot-devnet.ts.",
   "rpc": "https://api.devnet.solana.com",
   "accounts": {
     "AwiVMGyi8P9mN6ig5FA74CTS6sncc7bbh8CNAxKXUERk": {
@@ -43,6 +43,40 @@
       "lamports": 1630680,
       "executable": false,
       "data": "/0+SGQiniiMwdfkKbWTFYLcQAtB53obQORkH0HElkNbCBjuTXmR7bzUjSu6KEHI2s9QRzRR0nHj8HRoL5UxJFAHvhi+rfk6Rg6DJ2jFv/ExLAQDA4eQAAAAAAAEBdTPVJzM4jahPmtD+LFaHHLQ3aSdVin6B3iUepH0a9Pq4FpIdN7klrb5Mt4QPx5rSSQUEAICWmAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAADF4Lx4AAAAARHgvHgAAAAD5AQ=="
+    },
+    "892E1Gutdd3fk248aoKYTMvGfairBjToUumNV2onBk84": {
+      "owner": "AwiVMGyi8P9mN6ig5FA74CTS6sncc7bbh8CNAxKXUERk",
+      "lamports": 1630680,
+      "executable": false,
+      "data": "/0+SGQiniiMwdfkKbWTFYLcQAtB53obQORkH0HElkNbCBjuTXmR7b5D6hFJvaLXis9QRzRR0nHj8HRoL5UxJFAFjndemBX6r5aiJL6gA6E0IAQCAlpgAAAAAAAEBdTPVJzM4jahPmtD+LFaHHLQ3aSdVin6B3iUepH0a9Pq4FpIdN7klrb5Mt4QPx5rS0wAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAABWiMB4AAAAAJqIwHgAAAAD9AQ=="
+    },
+    "51nFcVZxuTYwAMWgYWHwt23kGm2aRW7ELaj2ZN3aJqiT": {
+      "owner": "AwiVMGyi8P9mN6ig5FA74CTS6sncc7bbh8CNAxKXUERk",
+      "lamports": 1630680,
+      "executable": false,
+      "data": "/0+SGQiniiMwdfkKbWTFYLcQAtB53obQORkH0HElkNbCBjuTXmR7b/y9XeG4I4Jps9QRzRR0nHj8HRoL5UxJFAEwFR+CUXYWd0KvrgkUfhO/AQBAS0wAAAAAAAEBdTPVJzM4jahPmtD+LFaHHLQ3aSdVin6B3iUepH0a9Pq4FpIdN7klrb5Mt4QPx5rS0wAFAICWmAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEBEAAAADaiMB4AAAAARaIwHgAAAAD8AQ=="
+    },
+    "8nQjNiQJ3xBPGRKaRPLqn9p39W1zbMSKeQEXxxdno9Bf": {
+      "owner": "AwiVMGyi8P9mN6ig5FA74CTS6sncc7bbh8CNAxKXUERk",
+      "lamports": 1630680,
+      "executable": false,
+      "data": "/0+SGQiniiMwdfkKbWTFYLcQAtB53obQORkH0HElkNbCBjuTXmR7b0E5RbyzcZhOs9QRzRR0nHj8HRoL5UxJFAHvhi+rfk6Rg6DJ2jFv/ExLAQCAw8kBAAAAAAEBdTPVJzM4jahPmtD+LFaHHLQ3aSdVin6B3iUepH0a9Pq4FpIdN7klrb5Mt4QPx5rS1AAFAICWmAAAAAAAAgAAAAAAAAAAAAAAAAAAAAECAAACANSiMB4AAAAA5KIwHgAAAAD8AQ=="
+    },
+    "J88FDgrZGTh6UXbKG27zWTy47n6N78YK7ob9gVof6Lo1": {
+      "owner": "AwiVMGyi8P9mN6ig5FA74CTS6sncc7bbh8CNAxKXUERk",
+      "lamports": 1630680,
+      "executable": false,
+      "data": "/0+SGQiniiMwdfkKbWTFYLcQAtB53obQORkH0HElkNbCBjuTXmR7bwcp21j3YNDVs9QRzRR0nHj8HRoL5UxJFAFjndemBX6r5aiJL6gA6E0IAQAAwusLAAAAAAEBdTPVJzM4jahPmtD+LFaHHLQ3aSdVin6B3iUepH0a9Pq4FpIdN7klrb5Mt4QPx5rS1AAFAICWmAAAAAAAAwAAAAAAAAAAAAAAAAAAAAEBAGAAAPCiMB4AAAAA/6IwHgAAAAD/AQ=="
+    },
+    "UU6Jz4ytWnZw81Um4uxxfiUPZgZFhNhJrzaugcX9Xj7": {
+      "owner": "AwiVMGyi8P9mN6ig5FA74CTS6sncc7bbh8CNAxKXUERk",
+      "lamports": 1630680,
+      "executable": false,
+      "data": "/0+SGQiniiMwdfkKbWTFYLcQAtB53obQORkH0HElkNbCBjuTXmR7b683i7BjnQ5rs9QRzRR0nHj8HRoL5UxJFAHvhi+rfk6Rg6DJ2jFv/ExLAQDA4eQAAAAAAAEBdTPVJzM4jahPmtD+LFaHHLQ3aSdVin6B3iUepH0a9Pq4FpIdN7klrb5Mt4QPx5rS1AAFAICWmAAAAAAABAAAAAAAAAAAAAAAAAAAAAEAAAAAAAmjMB4AAAAAGqMwHgAAAAD/AQ=="
     }
+  },
+  "landed": {
+    "5axning5vhZ6PTx7Nhw3WyPpBAYjPgNQetaCT7Fq5D9kdW2xTspMMpxvQ8sEj47uGYFrGH5ANWyHEhqJW5oYU3wc": 506503732,
+    "2NJoEc4CmAy5MyDWkFmwigVZ7hWKPUCZFspYHazhb18SC7A2QNwFA7m414zVwYsma7GSpghBSznfJPtH3NouULgA": 506503976
   }
 }

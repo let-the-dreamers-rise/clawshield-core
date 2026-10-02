@@ -15,7 +15,7 @@ import { checkDeployment } from "../web/src/deployment.ts";
 import { checksFor, describeAction, explorerUrl, failureLabel, formatTime, formatUnits, shortAddress } from "../web/src/format.ts";
 import { rewriteFirstDenial, tamperNote } from "../web/src/tamper.ts";
 import { VerifyError, verifyDocuments } from "../web/src/verify.ts";
-import { ACCOUNTS, DEVNET_RPC, MANIFEST, PLAINTEXT_RECEIPTS, POLICY, SEALED_RECEIPTS, TRUST, devnetFetch } from "./helpers/devnet.ts";
+import { ACCOUNTS, DEVNET_RPC, GATEWAY_RECEIPTS, LANDED, MANIFEST, PLAINTEXT_RECEIPTS, POLICY, SEALED_RECEIPTS, TRUST, devnetFetch } from "./helpers/devnet.ts";
 
 const sealed = (receipts = SEALED_RECEIPTS, fetch = devnetFetch()) =>
   verifyDocuments({ receipts, anchor: TRUST, rpcEndpoint: DEVNET_RPC, fetch });
@@ -54,20 +54,42 @@ test("the devnet run verifies against the cluster's records on chain", async () 
   assert.deepEqual(calls, [...Array(10).fill("getAccountInfo"), "getSignatureStatuses"]);
 });
 
-test("rewriting a denial as an approval is caught by the signature, the chain and the record on chain", async () => {
-  const forged = rewriteFirstDenial(SEALED_RECEIPTS);
-  assert.equal(forged.index, 1);
-  assert.match(tamperNote(forged.index), /^Receipt #2 /);
+test("the gateway run verifies on chain, and the transfers it allowed landed", async () => {
+  const calls: string[] = [];
+  const report = await sealed(GATEWAY_RECEIPTS, devnetFetch({ landed: LANDED, calls }));
 
-  const report = await sealed(forged.text);
-  assert.equal(report.valid, false);
-  assert.deepEqual([...report.failures].sort(), ["attestation_invalid", "bad_signature", "chain_broken"]);
-  assert.deepEqual(report.rows.map((r) => r.verdict), ["allow", "allow", "escalate", "deny", "allow"]);
-  assert.deepEqual(report.rows.map((r) => r.problems.length > 0), [false, true, true, false, false]);
-  assert.ok(report.rows[1]?.problems.some((p) => /verdict_mismatch/.test(p)), "the cluster's record still says deny");
-  assert.ok(report.rows[2]?.problems.some((p) => /previous/.test(p)), "the next receipt no longer links");
-  assert.deepEqual(report.general, []);
+  assert.equal(report.valid, true, report.rows.flatMap((r) => r.problems).join("\n"));
+  assert.equal(report.onChain, true);
+  assert.equal(report.chained, true);
+  assert.deepEqual(report.rows.map((r) => r.verdict), ["allow", "deny", "escalate", "deny", "allow"]);
+  assert.equal(report.rows[4]?.action, "solana transfer 0.015 SOL to 9WzD…AWWM");
+  // What the gateway broadcast is on chain at the slots the snapshot recorded; a refusal binds nothing.
+  assert.deepEqual(report.rows.map((r) => r.transactionStatus), [
+    { state: "landed", slot: 506503732 },
+    undefined,
+    undefined,
+    undefined,
+    { state: "landed", slot: 506503976 },
+  ]);
+  assert.deepEqual(calls, [...Array(10).fill("getAccountInfo"), "getSignatureStatuses"]);
 });
+
+for (const [run, receipts] of [["CLI run", SEALED_RECEIPTS], ["gateway run", GATEWAY_RECEIPTS]] as const) {
+  test(`rewriting a denial as an approval in the ${run} is caught by the signature, the chain and the record on chain`, async () => {
+    const forged = rewriteFirstDenial(receipts);
+    assert.equal(forged.index, 1);
+    assert.match(tamperNote(forged.index), /^Receipt #2 /);
+
+    const report = await sealed(forged.text, devnetFetch({ landed: LANDED }));
+    assert.equal(report.valid, false);
+    assert.deepEqual([...report.failures].sort(), ["attestation_invalid", "bad_signature", "chain_broken"]);
+    assert.deepEqual(report.rows.map((r) => r.verdict), ["allow", "allow", "escalate", "deny", "allow"]);
+    assert.deepEqual(report.rows.map((r) => r.problems.length > 0), [false, true, true, false, false]);
+    assert.ok(report.rows[1]?.problems.some((p) => /verdict_mismatch/.test(p)), "the cluster's record still says deny");
+    assert.ok(report.rows[2]?.problems.some((p) => /previous/.test(p)), "the next receipt no longer links");
+    assert.deepEqual(report.general, []);
+  });
+}
 
 test("the plaintext run replays against the published policy", async () => {
   const report = await verifyDocuments({ receipts: PLAINTEXT_RECEIPTS, anchor: POLICY, rpcEndpoint: DEVNET_RPC, fetch: devnetFetch() });

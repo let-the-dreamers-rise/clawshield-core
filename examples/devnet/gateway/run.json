@@ -1,0 +1,57 @@
+{
+  "note": "A sealed gateway run on devnet: the published container image in broadcast mode, one agent, five proposals. decisionMs is the full HTTP round trip, the Arcium MPC evaluation included. Public facts only; the receipts are in receipts.json and verify against ../trust.json.",
+  "image": "ghcr.io/let-the-dreamers-rise/genkai-gateway@sha256:049f44058e8bdc8202606e505678d0cf934b1308d05b7564627fa30a19898aff",
+  "cluster": "devnet",
+  "mode": "sealed",
+  "execution": "broadcast",
+  "vault": "4gB7cUMtmxJZnN7LCsJzQXQkr6MLoYshRAjKCJ1Q6VrQ",
+  "operatorPublicKey": "MCowBQYDK2VwAyEANpwl9HA6GpLfc3g8KPV4WYFaFZzLVHMzfli9XkfjIhk=",
+  "funding": "44V5HfxpEerEMa7bXyb4HXPwp839nGiSc5WmPZHCB2Hph2fAvmJtqZJkB48isYv1yYvS2QehE451miidf1MoQUAy",
+  "decisions": [
+    {
+      "seq": 1,
+      "verdict": "allow",
+      "rules": [
+        "all_checks_passed"
+      ],
+      "decisionMs": 9311,
+      "signature": "5axning5vhZ6PTx7Nhw3WyPpBAYjPgNQetaCT7Fq5D9kdW2xTspMMpxvQ8sEj47uGYFrGH5ANWyHEhqJW5oYU3wc",
+      "finalizedSlot": 506503732
+    },
+    {
+      "seq": 2,
+      "verdict": "deny",
+      "rules": [
+        "counterparty_not_allowed"
+      ],
+      "decisionMs": 38420
+    },
+    {
+      "seq": 3,
+      "verdict": "escalate",
+      "rules": [
+        "human_approval_required"
+      ],
+      "decisionMs": 5143
+    },
+    {
+      "seq": 4,
+      "verdict": "deny",
+      "rules": [
+        "mint_cap_exceeded",
+        "amount_exceeds_window"
+      ],
+      "decisionMs": 6109
+    },
+    {
+      "seq": 5,
+      "verdict": "allow",
+      "rules": [
+        "all_checks_passed"
+      ],
+      "decisionMs": 7639,
+      "signature": "2NJoEc4CmAy5MyDWkFmwigVZ7hWKPUCZFspYHazhb18SC7A2QNwFA7m414zVwYsma7GSpghBSznfJPtH3NouULgA",
+      "finalizedSlot": 506503976
+    }
+  ]
+}
