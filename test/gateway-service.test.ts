@@ -19,7 +19,7 @@ import { NATIVE_SOL_MINT, SOLANA_TRANSFER_TOOL, SYSTEM_PROGRAM_ID } from "../src
 import { solanaAddress, solanaSecretKey } from "../src/solana/keys.ts";
 import { openDatabase } from "../src/gateway/db.ts";
 import { createStore } from "../src/gateway/store.ts";
-import { createGatewayService } from "../src/gateway/service.ts";
+import { IdempotencyMismatchError, createGatewayService } from "../src/gateway/service.ts";
 import { createKeyedMutex, QueueFullError } from "../src/gateway/mutex.ts";
 import { ConfigError, parseGatewayEnv } from "../src/gateway/config.ts";
 import { startGateway } from "../src/gateway/boot.ts";
@@ -49,7 +49,7 @@ function slow(provider: PolicyProvider, ms: number): PolicyProvider {
   } };
 }
 
-function setup(over: { rpc?: RpcClient; execution?: "sign" | "broadcast"; maxQueued?: number; provider?: PolicyProvider } = {}) {
+function setup(over: { rpc?: RpcClient; execution?: "sign" | "broadcast"; maxQueued?: number; provider?: PolicyProvider; now?: () => number } = {}) {
   const db = openDatabase(":memory:");
   const store = createStore(db);
   store.createAgent({ id: "bot", label: "bot", now: T0 });
@@ -62,7 +62,7 @@ function setup(over: { rpc?: RpcClient; execution?: "sign" | "broadcast"; maxQue
     execution: over.execution ?? "sign",
     ...(over.rpc ? { rpc: over.rpc } : {}),
     ...(over.maxQueued ? { maxQueuedPerAgent: over.maxQueued } : {}),
-    now: () => T0,
+    now: over.now ?? (() => T0),
   });
   return { db, store, service };
 }
@@ -165,6 +165,104 @@ test("the blockhash is fetched after the verdict, and an allow that could not be
   const chain = store.listReceipts("bot", { afterSeq: 0, limit: 10 }).items.map((r) => r.receipt);
   const check = verifyChain(chain, () => policy);
   assert.equal(check.valid, true, check.detail.join("; "));
+  db.close();
+});
+
+/** A provider that counts how often the policy is actually asked. */
+function counting(): { provider: PolicyProvider; asked: () => number } {
+  let asked = 0;
+  const plaintext = createPlaintextPolicyProvider(policy);
+  return { provider: { ...plaintext, decide: async (...args) => {
+    asked++;
+    await new Promise((r) => setTimeout(r, 5));
+    return plaintext.decide(...args);
+  } }, asked: () => asked };
+}
+
+test("a retry with the same idempotency key gets the first decision back, not a second one", async () => {
+  // A sealed decision can take longer than an agent's HTTP timeout. Without a key, the retry
+  // would be a second evaluation, a second receipt and, for an allow, a second transfer.
+  const { provider, asked } = counting();
+  const { db, store, service } = setup({ provider });
+
+  const first = await service.decide("bot", pay(1_000n), { modelReasoning: "invoice 7", idempotencyKey: "inv-7" });
+  const again = await service.decide("bot", pay(1_000n), { modelReasoning: "invoice 7, retried", idempotencyKey: "inv-7" });
+  assert.equal(asked(), 1, "the policy is asked once");
+  assert.equal(first.replayed, undefined);
+  assert.equal(again.replayed, true);
+  assert.equal(again.receipt.body.receiptId, first.receipt.body.receiptId);
+  assert.equal(again.seq, first.seq);
+  assert.equal(again.signedTransaction, first.signedTransaction);
+  assert.equal(store.getLedger("bot")?.state.callsInWindow, 1);
+  assert.equal(store.getLedger("bot")?.state.spentInWindow, 1_000n, "charged once");
+
+  // Overlapping retries queue behind the first, then replay it.
+  const burst = await Promise.all([1, 2, 3].map(() => service.decide("bot", pay(2_000n), { idempotencyKey: "inv-8" })));
+  assert.equal(new Set(burst.map((r) => r.receipt.body.receiptId)).size, 1);
+  assert.equal(asked(), 2);
+
+  // A key names one transfer. Reusing it for another is a client bug, refused rather than guessed at.
+  await assert.rejects(service.decide("bot", pay(9_999n), { idempotencyKey: "inv-7" }), IdempotencyMismatchError);
+  await assert.rejects(service.decide("bot", { ...pay(1_000n), to: solanaAddress(generateKeypair().publicKey) }, { idempotencyKey: "inv-7" }), IdempotencyMismatchError);
+
+  // Without a key nothing is deduplicated: a deliberate second payment is a second decision.
+  await service.decide("bot", pay(1_000n));
+  await service.decide("bot", pay(1_000n));
+  assert.equal(asked(), 4);
+  const chain = store.listReceipts("bot", { afterSeq: 0, limit: 10 }).items.map((r) => r.receipt);
+  assert.equal(chain.length, 4);
+  assert.equal(verifyChain(chain, () => policy).valid, true);
+  db.close();
+});
+
+test("idempotency keys belong to one agent and lapse after a day", async () => {
+  let clock = T0;
+  const { provider, asked } = counting();
+  const { db, store, service } = setup({ provider, now: () => clock });
+  store.createAgent({ id: "bot-2", label: "bot-2", now: T0 });
+
+  const mine = await service.decide("bot", pay(1_000n), { idempotencyKey: "shared" });
+  const theirs = await service.decide("bot-2", pay(1_000n), { idempotencyKey: "shared" });
+  assert.notEqual(theirs.receipt.body.receiptId, mine.receipt.body.receiptId);
+  assert.equal(asked(), 2);
+
+  clock = T0 + 86_400_000 - 1;
+  assert.equal((await service.decide("bot", pay(1_000n), { idempotencyKey: "shared" })).receipt.body.receiptId, mine.receipt.body.receiptId);
+  clock = T0 + 86_400_000;
+  const fresh = await service.decide("bot", pay(1_000n), { idempotencyKey: "shared" });
+  assert.notEqual(fresh.receipt.body.receiptId, mine.receipt.body.receiptId);
+  assert.equal(fresh.replayed, undefined);
+  assert.equal(asked(), 3);
+  db.close();
+});
+
+test("a replay in broadcast mode delivers what the first attempt could not, once", async () => {
+  const sent: string[] = [];
+  let fail = true;
+  const rpc = {
+    getLatestBlockhash: async () => ({ blockhash: "EkSnNWid2cvwEVnVx9aBqawnmiCNiDgp3gUdkDPTKN1N", lastValidBlockHeight: 9 }),
+    sendTransaction: async (wire: string) => {
+      if (fail) throw new Error("node is behind");
+      sent.push(wire);
+      return "5".repeat(88);
+    },
+  } as unknown as RpcClient;
+  const { db, store, service } = setup({ rpc, execution: "broadcast" });
+
+  const first = await service.decide("bot", pay(1_000n), { idempotencyKey: "pay-1" });
+  assert.match(first.submitError ?? "", /node is behind/);
+
+  // Resending signed bytes is safe: the cluster executes one signature at most once.
+  fail = false;
+  const retry = await service.decide("bot", pay(1_000n), { idempotencyKey: "pay-1" });
+  assert.equal(retry.replayed, true);
+  assert.equal(retry.submittedSignature, "5".repeat(88));
+  assert.deepEqual(sent, [first.signedTransaction]);
+  assert.equal(store.getReceipt(first.receipt.body.receiptId)?.submittedSignature, "5".repeat(88));
+
+  const third = await service.decide("bot", pay(1_000n), { idempotencyKey: "pay-1" });
+  assert.equal(third.submittedSignature, "5".repeat(88));
+  assert.equal(sent.length, 1, "once delivered, a replay sends nothing more");
   db.close();
 });
 

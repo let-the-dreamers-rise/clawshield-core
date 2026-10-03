@@ -73,6 +73,18 @@ const MIGRATIONS: readonly string[] = [
     detail   TEXT
   );
   `,
+  `
+  -- An agent's Idempotency-Key, bound to the decision it produced, so a retry replays it.
+  CREATE TABLE idempotency_keys (
+    agent_id      TEXT NOT NULL REFERENCES agents(id),
+    key           TEXT NOT NULL,
+    request_hash  TEXT NOT NULL,
+    receipt_id    TEXT NOT NULL REFERENCES receipts(receipt_id),
+    created_at    INTEGER NOT NULL,
+    PRIMARY KEY (agent_id, key)
+  );
+  CREATE INDEX idempotency_keys_created ON idempotency_keys(created_at);
+  `,
 ];
 
 export function openDatabase(path: string): DatabaseSync {

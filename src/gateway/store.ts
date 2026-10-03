@@ -75,6 +75,15 @@ export interface Page<T> {
   readonly total: number;
 }
 
+/** A client's Idempotency-Key and what it was bound to. */
+export interface IdempotencyBinding {
+  readonly key: string;
+  /** The hash of the transfer the key names. */
+  readonly requestHash: string;
+  /** A key created at or before this time has lapsed. */
+  readonly lapsedAt: number;
+}
+
 export interface CommitDecision {
   readonly agentId: string;
   /** The ledger version the decision was taken against. A newer version refuses the commit. */
@@ -83,6 +92,8 @@ export interface CommitDecision {
   readonly receipt: SignedReceipt;
   readonly signedTransaction?: string;
   readonly now: number;
+  /** Bound in the same transaction, so a recorded decision is never left without its key. */
+  readonly idempotency?: IdempotencyBinding;
 }
 
 type Row = Record<string, SQLOutputValue>;
@@ -220,8 +231,22 @@ export function createStore(db: DatabaseSync) {
         c.receipt.body.receiptId, c.agentId, seq, bodyHash, c.receipt.body.decision.verdict, c.receipt.body.decision.decidedAt,
         toJson(c.receipt as never), c.signedTransaction ?? null, c.now,
       );
+      if (c.idempotency) {
+        // Lapsed keys are purged on each keyed commit, so the table holds about a day of keys.
+        run("DELETE FROM idempotency_keys WHERE created_at <= ?", c.idempotency.lapsedAt);
+        run(
+          "INSERT INTO idempotency_keys (agent_id, key, request_hash, receipt_id, created_at) VALUES (?, ?, ?, ?, ?)",
+          c.agentId, c.idempotency.key, c.idempotency.requestHash, c.receipt.body.receiptId, c.now,
+        );
+      }
       return seq;
     });
+  }
+
+  /** The decision a live Idempotency-Key names, if any. */
+  function findIdempotent(agentId: string, key: string, lapsedAt: number): { readonly requestHash: string; readonly receiptId: string } | undefined {
+    const r = one("SELECT request_hash, receipt_id FROM idempotency_keys WHERE agent_id = ? AND key = ? AND created_at > ?", agentId, key, lapsedAt);
+    return r ? { requestHash: text(r["request_hash"]), receiptId: text(r["receipt_id"]) } : undefined;
   }
 
   const recordSubmission = (receiptId: string, signature: string, now: number): void =>
@@ -263,7 +288,7 @@ export function createStore(db: DatabaseSync) {
   return Object.freeze({
     createAgent, getAgent, listAgents, setRevoked, setDrawdown,
     insertKey, findKey, touchKey, revokeKey, listKeys,
-    getLedger, commitDecision, recordSubmission, getReceipt, listReceipts,
+    getLedger, commitDecision, findIdempotent, recordSubmission, getReceipt, listReceipts,
     audit, listAudit,
     /** Liveness of the database itself, for /readyz. */
     ping: (): boolean => one("SELECT 1 AS ok")?.["ok"] === 1,

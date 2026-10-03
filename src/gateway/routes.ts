@@ -9,13 +9,14 @@
  *   admin     an admin key
  */
 
+import type { IncomingHttpHeaders } from "node:http";
 import { HttpError } from "../server/http.ts";
 import { handleVerifyChain, handleVerifyReceipt } from "../server/handlers.ts";
 import { issueAgentKey } from "./admin.ts";
 import type { Principal } from "./auth.ts";
 import { QueueFullError } from "./mutex.ts";
-import { agentId, parseCreateAgent, parseCreateKey, parseDecisionRequest, parseDrawdown, parsePage } from "./requests.ts";
-import { NotFoundError } from "./service.ts";
+import { agentId, parseCreateAgent, parseCreateKey, parseDecisionRequest, parseDrawdown, parseIdempotencyKey, parsePage } from "./requests.ts";
+import { IdempotencyMismatchError, NotFoundError } from "./service.ts";
 import { ConflictError, type StoredReceipt } from "./store.ts";
 import type { GatewayServerConfig } from "./server.ts";
 
@@ -26,6 +27,7 @@ export interface RouteContext {
   readonly principal?: Principal;
   readonly params: Readonly<Record<string, string>>;
   readonly query: URLSearchParams;
+  readonly headers: IncomingHttpHeaders;
   readonly body: unknown;
   readonly now: number;
 }
@@ -34,6 +36,7 @@ export interface RouteResult {
   readonly status?: number;
   readonly data: unknown;
   readonly meta?: { readonly total: number; readonly limit: number; readonly next: string | null };
+  readonly headers?: Readonly<Record<string, string>>;
 }
 
 export interface RouteDef {
@@ -58,6 +61,7 @@ function mapped<T>(fn: () => T): T {
 function toHttp(err: unknown): unknown {
   if (err instanceof NotFoundError) return new HttpError(404, err.message);
   if (err instanceof ConflictError) return new HttpError(409, err.message);
+  if (err instanceof IdempotencyMismatchError) return new HttpError(422, err.message);
   if (err instanceof QueueFullError) return new HttpError(429, err.message, { "retry-after": "5" });
   return err;
 }
@@ -154,8 +158,13 @@ export const ROUTES = {
     body: true,
     handle: async (ctx) => {
       const request = parseDecisionRequest(ctx.body);
+      const idempotencyKey = parseIdempotencyKey(ctx.headers["idempotency-key"]);
       try {
-        return ok(await ctx.config.service.decide(ctx.principal?.agentId as string, request.transfer, request.modelReasoning));
+        const result = await ctx.config.service.decide(ctx.principal?.agentId as string, request.transfer, {
+          modelReasoning: request.modelReasoning,
+          idempotencyKey,
+        });
+        return { data: result, ...(result.replayed ? { headers: { "idempotent-replayed": "true" } } : {}) };
       } catch (err) {
         throw toHttp(err);
       }

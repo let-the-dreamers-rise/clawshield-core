@@ -39,6 +39,7 @@ so no amount passes through a JavaScript number.
 | 409 | The agent's ledger moved under the request. Nothing was recorded; retry |
 | 413 | Body over the limit |
 | 415 | Not `application/json` |
+| 422 | An `Idempotency-Key` already used for a different transfer |
 | 429 | Rate limited; honour `Retry-After` |
 | 500 | Unexpected failure. No detail is returned; the server logs it with the request id |
 | 503 | Not ready (`/readyz` only): the database is unavailable |
@@ -179,6 +180,15 @@ A denial or an escalation is a `200` too, with its receipt and no transaction. I
 mode an allow also carries `submittedSignature`, or `submitError` if delivery failed. The
 decision stands and is recorded either way, and the signed transaction can be resubmitted.
 
+**Retries.** Send an `Idempotency-Key` header with every decision: up to 255 printable ASCII
+characters, unique per payment (a UUID, or your own invoice id). A sealed decision takes
+seconds, and a client that times out and retries without a key asks the policy again, so an
+allowed transfer could be signed twice. With a key, a retry within 24 hours gets the recorded
+decision back, marked `Idempotent-Replayed: true` and `"replayed": true`, and the policy is not
+asked again. In broadcast mode the replay also resends a transaction whose first delivery
+failed, which is safe: the cluster executes a signature at most once. A key is bound to its
+transfer, so the same key with a different transfer is a `422`. Keys are scoped to the agent.
+
 The blockhash is fetched after the verdict, and only for an allow, so the seconds a sealed
 decision spends on the MPC cluster do not come out of the transaction's validity window. If
 that fetch fails, the allow is still recorded but carries no `signedTransaction`, and the
@@ -201,6 +211,7 @@ AGENT=$(curl -s $G/v1/agents/desk-bot/keys -H "authorization: Bearer $ADMIN" \
   -H 'content-type: application/json' -d '{"label":"prod"}' | jq -r .data.token)
 
 curl -s $G/v1/decisions -H "authorization: Bearer $AGENT" -H 'content-type: application/json' \
+  -H 'idempotency-key: invoice-1042' \
   -d '{"transfer":{"kind":"sol","to":"7VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE","amount":"10000000","decimals":9}}'
 
 # Anyone can then fetch the chain and check it against the published trust anchor.

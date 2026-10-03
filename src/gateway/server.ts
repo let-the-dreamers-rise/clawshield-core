@@ -16,6 +16,9 @@
  * cannot take decisions: who acted is always an agent identity, so the receipt chain and the
  * audit trail never have to guess.
  *
+ * A decision request may carry an Idempotency-Key; a retry under it replays the recorded decision
+ * and is marked Idempotent-Replayed: true.
+ *
  * Every response is { success, data, error, meta? } and carries an X-Request-Id. Each request is
  * logged as one JSON line with that id, route, status, latency and key id. Never the credential,
  * never the body.
@@ -97,9 +100,9 @@ export function createGatewayHandler(config: GatewayServerConfig): (req: Incomin
       }
 
       const body = def.body ? await readJsonBody(req, limit) : undefined;
-      const ctx: RouteContext = { config, principal, params: match.params, query: url.searchParams, body, now: now() };
+      const ctx: RouteContext = { config, principal, params: match.params, query: url.searchParams, headers: req.headers, body, now: now() };
       const result: RouteResult = await def.handle(ctx);
-      send(res, result.status ?? 200, { success: true, data: result.data, error: null, ...(result.meta ? { meta: result.meta as Meta } : {}) });
+      send(res, result.status ?? 200, { success: true, data: result.data, error: null, ...(result.meta ? { meta: result.meta as Meta } : {}) }, result.headers);
     } catch (err) {
       if (!sendError(res, err)) {
         log(JSON.stringify({ level: "error", id: requestId, route, error: err instanceof Error ? err.message : String(err) }));

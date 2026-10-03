@@ -231,6 +231,39 @@ test("a malformed escape in a path is a client error, never a server error", asy
   }
 });
 
+test("an Idempotency-Key makes a retried decision safe over HTTP", async () => {
+  await call("POST", "/v1/agents", { token: admin, body: { id: "retry-bot", label: "Retry" } });
+  const token: string = (await call("POST", "/v1/agents/retry-bot/keys", { token: admin, body: { label: "r" } })).data.token;
+  const decide = async (key: string, lamports: string) => {
+    const res = await fetch(`${base}/v1/decisions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}`, "idempotency-key": key },
+      body: toJson({ transfer: { kind: "sol", to: VENDOR, amount: lamports, decimals: 9 } } as never),
+    });
+    return { status: res.status, replayed: res.headers.get("idempotent-replayed"), body: fromJson(await res.text()) as { data: any; error: string | null } };
+  };
+
+  const first = await decide("order-1", "1000");
+  assert.equal(first.status, 200);
+  assert.equal(first.replayed, null);
+
+  // The IETF draft sends the key as a quoted string; both spellings name the same key.
+  const retry = await decide('"order-1"', "1000");
+  assert.equal(retry.status, 200);
+  assert.equal(retry.replayed, "true");
+  assert.equal(retry.body.data.replayed, true);
+  assert.equal(retry.body.data.receipt.body.receiptId, first.body.data.receipt.body.receiptId);
+
+  const reused = await decide("order-1", "2000");
+  assert.equal(reused.status, 422);
+  assert.match(reused.body.error ?? "", /different transfer/);
+  for (const bad of ["", "x".repeat(256), "café"]) {
+    assert.equal((await decide(bad, "1000")).status, 400, JSON.stringify(bad));
+  }
+  const state = await call("GET", "/v1/agents/retry-bot", { token });
+  assert.equal(state.data.state.callsInWindow, 1, "the retries took no second decision");
+});
+
 test("requests are logged without credentials, and errors are uniform", async () => {
   assert.equal((await call("GET", "/v1/nothing")).status, 404);
   assert.equal((await call("PUT", "/v1/decisions")).status, 405);

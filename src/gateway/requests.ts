@@ -75,6 +75,20 @@ export function parseDecisionRequest(v: unknown): { readonly transfer: TransferI
   return modelReasoning === undefined ? { transfer } : { transfer, modelReasoning };
 }
 
+const IDEMPOTENCY_KEY = /^[\x21-\x7e][\x20-\x7e]{0,254}$/;
+
+/**
+ * The Idempotency-Key header: 1 to 255 printable ASCII characters, sent bare (as Stripe and
+ * most clients do) or as the quoted string of the IETF draft. Absent means no deduplication.
+ */
+export function parseIdempotencyKey(v: string | readonly string[] | undefined): string | undefined {
+  if (v === undefined) return undefined;
+  const raw = typeof v === "string" ? v : "";
+  const key = /^"(.*)"$/.exec(raw)?.[1] ?? raw;
+  if (!IDEMPOTENCY_KEY.test(key)) throw new SchemaError("Idempotency-Key", "expected 1 to 255 printable ASCII characters");
+  return key;
+}
+
 /** `?after=<n>&limit=<n>`, bounded so one request cannot ask for the whole table. */
 export function parsePage(params: URLSearchParams, maxLimit = 100): { readonly after: number; readonly limit: number } {
   const n = (key: string, fallback: number, max: number): number => {

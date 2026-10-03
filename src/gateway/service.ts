@@ -15,8 +15,15 @@
  *
  * Step 5 happens before step 6 on purpose: a transaction is never sent for a decision the
  * gateway has not durably recorded.
+ *
+ * A request may carry an Idempotency-Key. A sealed decision takes seconds, long enough for an
+ * agent's HTTP client to give up and retry, and a retry must not become a second decision and
+ * a second transfer. Within a day, the same key for the same transfer replays the recorded
+ * decision instead of asking again.
  */
 
+import { createHash } from "node:crypto";
+import { canonicalBytes, type Canonicalisable } from "../receipt/canonical.ts";
 import { createSolanaAdapter } from "../solana/adapter.ts";
 import type { TransactionFees } from "../solana/compose.ts";
 import { solanaAddress } from "../solana/keys.ts";
@@ -35,10 +42,20 @@ export const OFFLINE_BLOCKHASH = "EkSnNWid2cvwEVnVx9aBqawnmiCNiDgp3gUdkDPTKN1N";
 
 export type ExecutionMode = "sign" | "broadcast";
 
+/** How long an Idempotency-Key keeps naming its decision. */
+export const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
+
 export class NotFoundError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "NotFoundError";
+  }
+}
+
+export class IdempotencyMismatchError extends Error {
+  constructor() {
+    super("This Idempotency-Key was already used for a different transfer");
+    this.name = "IdempotencyMismatchError";
   }
 }
 
@@ -67,6 +84,13 @@ export interface TransferInput {
   readonly programId?: string;
 }
 
+export interface DecideOptions {
+  /** Recorded in the receipt for accountability. Never used for enforcement. */
+  readonly modelReasoning?: string;
+  /** The client's name for this transfer. A retry under the same key replays the decision. */
+  readonly idempotencyKey?: string;
+}
+
 export interface DecisionResult {
   readonly decision: Decision;
   readonly receipt: SignedReceipt;
@@ -74,7 +98,16 @@ export interface DecisionResult {
   readonly signedTransaction?: string;
   readonly submittedSignature?: string;
   readonly submitError?: string;
+  /** Present when an Idempotency-Key matched: this is the earlier decision, not a new one. */
+  readonly replayed?: true;
 }
+
+/**
+ * What an Idempotency-Key is bound to: the transfer. Not the reasoning, which a model may word
+ * differently on a retry of the same payment.
+ */
+const transferHash = (input: TransferInput): string =>
+  createHash("sha256").update(canonicalBytes({ ...input } as unknown as Canonicalisable)).digest("hex");
 
 export type GatewayService = ReturnType<typeof createGatewayService>;
 
@@ -112,12 +145,43 @@ export function createGatewayService(config: GatewayServiceConfig) {
     }
   }
 
-  async function decideNow(agentId: string, input: TransferInput, modelReasoning?: string): Promise<DecisionResult> {
+  /**
+   * The decision an Idempotency-Key already names. In broadcast mode a transaction whose first
+   * delivery failed is sent again: the cluster executes a signature at most once, so resending
+   * the same signed bytes can deliver the transfer but never repeat it.
+   */
+  async function replay(receiptId: string, at: number): Promise<DecisionResult> {
+    const stored = config.store.getReceipt(receiptId);
+    if (!stored) throw new Error(`An idempotency key names receipt ${receiptId}, which is missing`);
+    const { signedTransaction, submittedSignature } = stored;
+    const resend = config.execution === "broadcast" && signedTransaction !== undefined && submittedSignature === undefined;
+    const delivery = resend ? await submit(receiptId, signedTransaction, at) : submittedSignature === undefined ? {} : { submittedSignature };
+    return {
+      decision: stored.receipt.body.decision,
+      receipt: stored.receipt,
+      seq: stored.seq,
+      ...(signedTransaction === undefined ? {} : { signedTransaction }),
+      ...delivery,
+      replayed: true,
+    };
+  }
+
+  async function decideNow(agentId: string, input: TransferInput, options: DecideOptions): Promise<DecisionResult> {
     const agent = config.store.getAgent(agentId);
     const ledger = config.store.getLedger(agentId);
     if (!agent || !ledger) throw new NotFoundError(`No agent ${agentId}`);
 
     const at = now();
+    const binding =
+      options.idempotencyKey === undefined
+        ? undefined
+        : { key: options.idempotencyKey, requestHash: transferHash(input), lapsedAt: at - IDEMPOTENCY_TTL_MS };
+    const prior = binding && config.store.findIdempotent(agentId, binding.key, binding.lapsedAt);
+    if (binding && prior) {
+      if (prior.requestHash !== binding.requestHash) throw new IdempotencyMismatchError();
+      return replay(prior.receiptId, at);
+    }
+
     const state = stateAt({ ...ledger.state, revoked: agent.revoked }, config.windowSeconds, at);
     const adapter = createSolanaAdapter({ agentId, keys: config.vault, provider: config.provider });
     const submission = await adapter.submit({
@@ -127,7 +191,7 @@ export function createGatewayService(config: GatewayServiceConfig) {
       recentBlockhash: latestBlockhash,
       fees: config.fees,
       previousReceiptHash: ledger.lastReceiptHash,
-      modelReasoning,
+      modelReasoning: options.modelReasoning,
     });
 
     const verdict = submission.decision.verdict;
@@ -141,6 +205,7 @@ export function createGatewayService(config: GatewayServiceConfig) {
       receipt: submission.receipt,
       signedTransaction: submission.signedTransaction,
       now: at,
+      ...(binding ? { idempotency: binding } : {}),
     });
     config.store.audit({ at, actor: `agent:${agentId}`, action: "decision", subject: submission.receipt.body.receiptId, detail: { verdict, seq } });
 
@@ -176,7 +241,7 @@ export function createGatewayService(config: GatewayServiceConfig) {
     cluster: config.cluster,
     execution: config.execution,
     status,
-    decide: (agentId: string, input: TransferInput, modelReasoning?: string): Promise<DecisionResult> =>
-      mutex.run(agentId, () => decideNow(agentId, input, modelReasoning)),
+    decide: (agentId: string, input: TransferInput, options: DecideOptions = {}): Promise<DecisionResult> =>
+      mutex.run(agentId, () => decideNow(agentId, input, options)),
   });
 }
