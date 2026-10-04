@@ -14,7 +14,7 @@ because a supply-chain compromise anywhere on the path from decision to signatur
 invalidate every receipt ever issued.
 
 ```
-183 tests  |  96% line coverage  |  0 runtime dependencies  |  tsc --strict clean
+211 tests  |  97% line coverage  |  0 runtime dependencies  |  tsc --strict clean
 ```
 
 ## Live on Solana devnet
@@ -167,6 +167,9 @@ key, the ledger and the receipt chain, so an agent can do exactly one thing, ask
   transaction under an optimistic version check and a per-agent queue, and only then is a
   transaction broadcast. Ten concurrent requests against a window with room for two are allowed
   exactly twice.
+- **Retries that cannot pay twice.** An `Idempotency-Key` names a transfer for 24 hours. A
+  retry under it gets the recorded decision back, re-sending a transaction that was signed but
+  never delivered; the same key on a different transfer is refused.
 - **Operable.** A kill switch per agent, a drawdown halt, key revocation that takes effect on
   the next request, an append-only audit log, per-client and per-key rate limits, JSON request
   logs that never contain a credential or a body, and `/healthz` and `/readyz`.
@@ -178,6 +181,23 @@ read-only root filesystem, with the ledger on a volume. It is self-hosted by des
 the key that signs transfers. See [docs/OPERATIONS.md](docs/OPERATIONS.md) and
 [docs/API.md](docs/API.md). The devnet run above is that image, sealed and broadcasting:
 [examples/devnet/gateway](examples/devnet/gateway).
+
+## Give an agent the tools: MCP
+
+`genkai mcp` serves the gateway to any MCP client as three tools: `request_transfer`,
+`get_spending_status` and `get_receipt`. One command adds it to Claude Code:
+
+```bash
+claude mcp add genkai -e GENKAI_GATEWAY_URL=https://genkai.example.com \
+  -e GENKAI_AGENT_KEY_FILE=$HOME/.genkai/agent.key -e GENKAI_AGENT_ID=treasury-bot \
+  -- node --experimental-strip-types --no-warnings /path/to/clawshield/src/cli/main.ts mcp
+```
+
+The model writes amounts in whole tokens, converted to lamports exactly. A refusal comes back
+marked final, an escalation comes back as a job for a person, and a retry under the model's own
+`request_id` cannot pay twice. The server holds an agent key and nothing else. For a Claude
+Desktop config that runs the container image, the tool reference and what this does and does
+not protect against, see [docs/MCP.md](docs/MCP.md).
 
 ## The Arcium circuit and program
 
@@ -257,7 +277,7 @@ The gateway refuses any request field it does not know, so an agent cannot slip 
 Requires Node 22+.
 
 ```bash
-npm test                    # 183 tests
+npm test                    # 211 tests
 npm run test:coverage       # gated at 80% lines
 npm run demo                # five treasury proposals, plaintext and sealed, receipts in demo-out/
 npm run serve               # hosted verifier on http://127.0.0.1:8787
@@ -325,12 +345,13 @@ src/solana/        base58, curve, PDAs, instructions, messages, signing, adapter
 src/io/            strict JSON and schema validation for anything read from outside
 src/server/        hosted verifier, handlers, shared HTTP plumbing, rate limiting
 src/gateway/       authenticated gateway: keys, roles, SQLite ledger, routes, config, boot
+src/mcp/           MCP server: protocol, stdio transport, gateway client, the agent's tools
 src/cli/           genkai command line and the demo
 web/               browser verifier, @noble crypto shim, Vercel function entry
 arcium/genkai/     Arcis circuit, Anchor program, localnet test, devnet deployment
 examples/devnet/   the devnet runs (gateway, CLI, plaintext), trust anchor, policy
 scripts/           site build and preview, gateway smoke test, fixtures, devnet snapshot, sealing
-docs/              architecture, API, operations
+docs/              architecture, API, MCP, operations
 ```
 
 ## Status and roadmap
@@ -343,9 +364,9 @@ localnet cluster; **the program, MXE and sealed policy deployed on devnet, with 
 by Arcium cluster 456**; the live `MxeClient`, with receipts that name their DecisionRecord;
 on-chain verification in the library, the CLI, the hosted API and the browser; **the
 authenticated gateway with its SQLite ledger, shipped as a container image and run from it on
-devnet, sealed and broadcasting, with both allowed transfers finalized**; **the public
-verifier site and API on Vercel**; CI on Node 22 and 24, and an image pipeline that smoke-tests
-before it publishes.
+devnet, sealed and broadcasting, with both allowed transfers finalized**; idempotent retries;
+**`genkai mcp`, the gateway as tools for any MCP client**; **the public verifier site and API
+on Vercel**; CI on Node 22 and 24, and an image pipeline that smoke-tests before it publishes.
 
 Next:
 
@@ -353,7 +374,9 @@ Next:
   definition cannot be swapped by an upgrade (`solana program set-upgrade-authority --final`;
   irreversible, so it is deliberately not automated)
 - Mainnet-beta, once Arcium's mainnet clusters are open to this program
-- Circle Developer Controlled Wallets and ERC-4337 adapters; an MCP transport for the gateway
+- Circle Developer Controlled Wallets and ERC-4337 adapters
+- An approval flow for escalations, so a person can release an escalated payment through the
+  gateway instead of making it by hand
 - On-chain receipt anchoring, so a receipt chain's head is timestamped by the cluster
 
 ## Licence

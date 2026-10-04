@@ -36,6 +36,12 @@ anything but the transfer it proposes.
 - `ledger.ts`: the window arithmetic, pure. `store.ts`, `db.ts`: the SQLite schema, migrations
   and the optimistic version check that makes a racing writer fail rather than double-spend.
 
+`src/mcp/` puts the same gateway in front of a model as MCP tools. It is a client of the HTTP
+API holding one agent key, so it adds no authority: `protocol.ts` and `stdio.ts` speak
+JSON-RPC, `client.ts` retries under the request's idempotency key, `args.ts` turns a model's
+arguments into exact minor units, and `describe.ts` words each verdict as the instruction the
+model needs next.
+
 ## Who decides: the policy provider
 
 `src/policy/sealed.ts` defines the seam. Both providers return a verdict and the rules that

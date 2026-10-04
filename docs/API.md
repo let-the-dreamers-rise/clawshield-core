@@ -6,7 +6,8 @@ Two services speak this API.
   `https://genkai-inky.vercel.app`) is stateless and needs no key. It answers one question: do
   these receipts hold?
 - **The gateway** (`genkai gateway`) is where agents ask for decisions. It authenticates every
-  caller, keeps the ledger, signs receipts and serves the same verification endpoints.
+  caller, keeps the ledger, signs receipts and serves the same verification endpoints. An agent
+  that speaks MCP can use it through `genkai mcp` instead of HTTP: see [MCP.md](MCP.md).
 
 ## Conventions
 

@@ -10,6 +10,7 @@
  *   genkai serve [--port 8787] [--host 127.0.0.1] [--trust-proxy] [--rpc <url>]
  *   genkai gateway [--port 8788] [--host h] [--db path]      configured from GENKAI_* env
  *   genkai gateway-admin <create-admin-key|list-keys|revoke-key> --db path
+ *   genkai mcp                                               tools for an AI agent over MCP stdio, from GENKAI_* env
  *   genkai demo [--out dir] [--devnet --keypair file [--rpc url]] [--live deployment.json --authority file]
  *
  * --rpc on verify and verify-chain is what lets a receipt from the live Arcium MXE verify: its
@@ -35,6 +36,7 @@ import { UsageError, readJsonFile, writeSecretFile } from "./files.ts";
 import { runDemo, type LiveOptions } from "./demo.ts";
 import { parseDeployment } from "./deployment.ts";
 import { runGateway, runGatewayAdmin } from "./gateway.ts";
+import { runMcp } from "./mcp.ts";
 import type { Keypair } from "../receipt/sign.ts";
 
 const DEVNET_RPC = "https://api.devnet.solana.com";
@@ -88,6 +90,7 @@ function report(result: VerificationData): number {
 const commands: Record<string, (argv: readonly string[]) => Promise<number> | number> = {
   gateway: runGateway,
   "gateway-admin": runGatewayAdmin,
+  mcp: runMcp,
 
   keygen(argv) {
     const { positionals } = parse(argv, {});
