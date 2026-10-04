@@ -8,5 +8,9 @@ sealed-secret*.json
 .env
 .env.*
 
+# Playwright output
+test-results/
+playwright-report/
+
 # Full session transcripts. Working artefacts, not source history.
 claude-session.jsonl

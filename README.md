@@ -279,6 +279,7 @@ Requires Node 22+.
 ```bash
 npm test                    # 211 tests
 npm run test:coverage       # gated at 80% lines
+npm run test:e2e            # the site in Chromium at desktop and phone size; PW_CHANNEL=msedge uses an installed browser
 npm run demo                # five treasury proposals, plaintext and sealed, receipts in demo-out/
 npm run serve               # hosted verifier on http://127.0.0.1:8787
 npm run build:web           # browser verifier + API functions as Vercel Build Output

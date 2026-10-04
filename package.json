@@ -10,7 +10,8 @@
   "scripts": {
     "test": "node --test --experimental-strip-types \"test/*.test.ts\"",
     "test:coverage": "node --test --experimental-strip-types --experimental-test-coverage --test-coverage-include=\"src/**\" --test-coverage-lines=80 \"test/*.test.ts\"",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p web",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web && tsc --noEmit -p test/e2e",
     "build:web": "node --experimental-strip-types --no-warnings scripts/build-web.ts",
     "preview:web": "node --experimental-strip-types --no-warnings scripts/preview-web.ts",
     "genkai": "node --experimental-strip-types --no-warnings src/cli/main.ts",
@@ -28,6 +29,7 @@
   "devDependencies": {
     "@noble/curves": "2.4.0",
     "@noble/hashes": "2.4.0",
+    "@playwright/test": "1.63.0",
     "@types/node": "^22.0.0",
     "buffer": "6.0.3",
     "esbuild": "0.28.2",
