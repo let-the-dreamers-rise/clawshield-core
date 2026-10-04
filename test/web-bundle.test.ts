@@ -105,6 +105,27 @@ test("the bundle reads the deployment from chain state as Node does", async () =
   assert.deepEqual((inBrowser as { problems: unknown[] }).problems, []);
 });
 
+test("a shared link shows a 1200x630 card, named by absolute URL as the crawlers require", () => {
+  const html = readFileSync(join(ROOT, "web", "index.html"), "utf8");
+  const meta = (attr: "property" | "name", key: string): string | undefined =>
+    new RegExp(`<meta ${attr}="${key}" content="([^"]*)">`).exec(html)?.[1];
+  const site = "https://genkai-inky.vercel.app/";
+  assert.equal(meta("property", "og:url"), site);
+  assert.match(html, new RegExp(`<link rel="canonical" href="${site}">`));
+  assert.equal(meta("property", "og:image"), `${site}og.png`);
+  assert.equal(meta("name", "twitter:image"), `${site}og.png`);
+  assert.equal(meta("name", "twitter:card"), "summary_large_image");
+  for (const key of ["og:title", "og:description", "og:image:alt"]) assert.ok((meta("property", key) ?? "").length > 20, key);
+
+  // The PNG header names its size: width and height are the first fields of the IHDR chunk.
+  const png = readFileSync(join(ROOT, "web", "og.png"));
+  assert.equal(png.subarray(12, 16).toString("latin1"), "IHDR");
+  assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [1200, 630]);
+  assert.equal(meta("property", "og:image:width"), "1200");
+  assert.equal(meta("property", "og:image:height"), "630");
+  assert.ok(png.length < 500_000, `og.png is ${png.length} bytes; some apps skip previews over 500 KB`);
+});
+
 test("the bundle stays small enough to load on a phone", () => {
   assert.ok(bundle.bytes < 600_000, `unminified bundle is ${bundle.bytes} bytes`);
 });
@@ -115,7 +136,7 @@ after(() => rmSync(out, { recursive: true, force: true }));
 test("the Vercel build serves the page with its headers and the API as raw-stream functions", async () => {
   const appBytes = await buildWeb(out);
   assert.ok(appBytes > 10_000 && appBytes < 400_000, `app.js is ${appBytes} bytes`);
-  for (const file of ["index.html", "app.js", "app.js.map", "styles.css", "favicon.svg", "deployment.json", "examples/devnet/sealed-receipts.json", "examples/devnet/gateway/receipts.json", "examples/devnet/gateway/run.json", "examples/devnet/trust.json"]) {
+  for (const file of ["index.html", "app.js", "app.js.map", "styles.css", "favicon.svg", "og.png", "deployment.json", "examples/devnet/sealed-receipts.json", "examples/devnet/gateway/receipts.json", "examples/devnet/gateway/run.json", "examples/devnet/trust.json"]) {
     assert.ok(existsSync(join(out, "static", file)), file);
   }
   const site = JSON.parse(readFileSync(join(out, "config.json"), "utf8")) as { version: number; routes: { headers?: Record<string, string> }[] };

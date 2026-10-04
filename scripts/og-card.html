@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GENKAI link preview card</title>
+<!--
+  The link-preview card, rendered to web/og.png (1200x630) by scripts/render-og.ts. The five
+  rows are the gateway run on devnet exactly as recorded in examples/devnet/gateway.
+-->
+<style>
+  :root {
+    --bg: #f7f7f4;
+    --surface: #ffffff;
+    --text: #18181c;
+    --muted: #5d5d67;
+    --line: #dfded8;
+    --accent: #3730a3;
+    --accent-soft: #e8e7fb;
+    --ok: #11703f;
+    --ok-soft: #e3f3e9;
+    --bad: #b3261e;
+    --bad-soft: #fbe7e5;
+    --warn: #8a5300;
+    --warn-soft: #fbefd9;
+    --sans: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+    --mono: "Cascadia Mono", ui-monospace, Consolas, Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    display: grid;
+    grid-template-columns: 1fr 456px;
+    column-gap: 56px;
+    padding: 58px 64px 54px 72px;
+    background: radial-gradient(circle at 100% 0%, var(--accent-soft) 0, rgb(232 231 251 / 0%) 60%), var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+  }
+  .left { display: flex; flex-direction: column; min-width: 0; }
+  .brand { display: flex; align-items: center; gap: 14px; font-size: 30px; font-weight: 700; letter-spacing: 0.05em; }
+  .mark { width: 46px; height: 46px; border-radius: 12px; background: var(--accent); position: relative; flex: none; }
+  .mark::after { content: ""; position: absolute; inset: 9px; border: 3.5px solid #e0e7ff; border-radius: 50%; }
+  .mark::before { content: ""; position: absolute; inset: 18px; background: #e0e7ff; border-radius: 50%; }
+  .eyebrow { margin-top: 42px; font-size: 21px; font-weight: 600; color: var(--accent); }
+  h1 { margin-top: 12px; font-size: 58px; line-height: 1.06; font-weight: 750; letter-spacing: -0.025em; }
+  .sub { margin-top: 22px; font-size: 23px; line-height: 1.38; color: var(--muted); }
+  .url { margin-top: auto; font-family: var(--mono); font-size: 21px; color: var(--accent); }
+  .card {
+    align-self: center;
+    padding: 24px 26px 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    box-shadow: 0 2px 4px rgb(24 24 28 / 6%), 0 14px 36px rgb(24 24 28 / 9%);
+  }
+  .verdict { display: flex; align-items: center; gap: 12px; }
+  .tick { width: 32px; height: 32px; border-radius: 50%; background: var(--ok); position: relative; flex: none; }
+  .tick::after { content: ""; position: absolute; left: 11px; top: 6px; width: 8px; height: 15px; border: solid #ffffff; border-width: 0 3.5px 3.5px 0; transform: rotate(45deg); }
+  .word { font-size: 36px; font-weight: 750; color: var(--ok); }
+  .summary { margin-top: 6px; font-size: 17px; line-height: 1.4; color: var(--muted); }
+  ol { list-style: none; margin-top: 14px; border-top: 1px solid var(--line); }
+  li { display: grid; grid-template-columns: 26px 92px 1fr auto; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 17px; }
+  li:last-child { border-bottom: 0; }
+  .i { font-family: var(--mono); font-size: 15px; color: var(--muted); }
+  .pill { justify-self: start; padding: 3px 11px; border-radius: 999px; font-size: 14px; font-weight: 700; }
+  .allow { background: var(--ok-soft); color: var(--ok); }
+  .deny { background: var(--bad-soft); color: var(--bad); }
+  .escalate { background: var(--warn-soft); color: var(--warn); }
+  .what { font-weight: 600; white-space: nowrap; }
+  .what span { font-weight: 400; color: var(--muted); }
+  .ok { width: 22px; height: 22px; border-radius: 50%; background: var(--ok); position: relative; }
+  .ok::after { content: ""; position: absolute; left: 8px; top: 4px; width: 5px; height: 10px; border: solid #ffffff; border-width: 0 2.5px 2.5px 0; transform: rotate(45deg); }
+</style>
+</head>
+<body>
+  <div class="left">
+    <div class="brand"><span class="mark" aria-hidden="true"></span>GENKAI</div>
+    <p class="eyebrow">Policy enforcement for AI agents on Solana</p>
+    <h1>Spending limits nobody can read and anybody can check.</h1>
+    <p class="sub">The policy stays encrypted inside an Arcium MXE. Every decision leaves a receipt you can verify.</p>
+    <p class="url">genkai-inky.vercel.app</p>
+  </div>
+  <div class="card">
+    <div class="verdict"><span class="tick" aria-hidden="true"></span><span class="word">Valid</span></div>
+    <p class="summary">5 sealed decisions from the devnet gateway, each matching the cluster's record on chain.</p>
+    <ol>
+      <li><span class="i">#1</span><span class="pill allow">allow</span><span class="what">0.01 SOL <span>landed</span></span><span class="ok"></span></li>
+      <li><span class="i">#2</span><span class="pill deny">deny</span><span class="what">0.005 SOL <span>unknown payee</span></span><span class="ok"></span></li>
+      <li><span class="i">#3</span><span class="pill escalate">escalate</span><span class="what">0.03 SOL <span>needs approval</span></span><span class="ok"></span></li>
+      <li><span class="i">#4</span><span class="pill deny">deny</span><span class="what">0.2 SOL <span>over the cap</span></span><span class="ok"></span></li>
+      <li><span class="i">#5</span><span class="pill allow">allow</span><span class="what">0.015 SOL <span>landed</span></span><span class="ok"></span></li>
+    </ol>
+  </div>
+</body>
+</html>

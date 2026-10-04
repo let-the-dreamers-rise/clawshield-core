@@ -21,6 +21,7 @@ const TYPES: Readonly<Record<string, string>> = {
   ".json": "application/json; charset=utf-8",
   ".map": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
+  ".png": "image/png",
 };
 
 const root = join(DEFAULT_OUT, "static");

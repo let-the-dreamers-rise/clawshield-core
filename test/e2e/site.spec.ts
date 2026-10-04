@@ -132,6 +132,11 @@ test("served with the deployment's security headers, and the API example names t
   expect(headers["x-frame-options"]).toBe("DENY");
   expect(headers["referrer-policy"]).toBe("no-referrer");
   await expect(page.locator("#api-example")).toContainText(`ORIGIN=${baseURL}`);
+
+  const card = await page.request.get("/og.png");
+  expect(card.status()).toBe(200);
+  expect(card.headers()["content-type"]).toBe("image/png");
+  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute("content", "https://genkai-inky.vercel.app/og.png");
 });
 
 test("the page fits the screen at every size, with a result showing", async ({ page }) => {
