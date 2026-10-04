@@ -21,7 +21,7 @@ because a supply-chain compromise anywhere on the path from decision to signatur
 invalidate every receipt ever issued.
 
 ```
-211 tests  |  97% line coverage  |  0 runtime dependencies  |  tsc --strict clean
+212 tests  |  97% line coverage  |  0 runtime dependencies  |  tsc --strict clean
 ```
 
 ## Live on Solana devnet
@@ -280,7 +280,7 @@ The gateway refuses any request field it does not know, so an agent cannot slip 
 Requires Node 22+.
 
 ```bash
-npm test                    # 211 tests
+npm test                    # 212 tests
 npm run test:coverage       # gated at 80% lines
 npm run test:e2e            # the site in Chromium at desktop and phone size; PW_CHANNEL=msedge uses an installed browser
 npm run demo                # five treasury proposals, plaintext and sealed, receipts in demo-out/
