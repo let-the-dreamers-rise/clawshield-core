@@ -1,5 +1,12 @@
 # GENKAI
 
+[![ci](https://github.com/let-the-dreamers-rise/clawshield-core/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/let-the-dreamers-rise/clawshield-core/actions/workflows/ci.yml)
+[![image](https://github.com/let-the-dreamers-rise/clawshield-core/actions/workflows/image.yml/badge.svg?branch=main)](https://github.com/let-the-dreamers-rise/clawshield-core/actions/workflows/image.yml)
+[![codeql](https://github.com/let-the-dreamers-rise/clawshield-core/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/let-the-dreamers-rise/clawshield-core/actions/workflows/codeql.yml)
+[![release](https://img.shields.io/github/v/release/let-the-dreamers-rise/clawshield-core?color=3730a3)](https://github.com/let-the-dreamers-rise/clawshield-core/releases)
+[![devnet](https://img.shields.io/badge/devnet-live-11703f)](https://genkai-inky.vercel.app)
+[![license](https://img.shields.io/badge/license-MIT-5d5d67)](LICENSE)
+
 **Confidential, verifiable authority for AI agents that move money on Solana.**
 
 An agent proposes a transfer. A deterministic policy engine - never the model - decides. Every
@@ -70,14 +77,10 @@ programs" leaks position sizing to anyone who reads the config, the log or a sin
 
 ## What GENKAI does
 
-```
- agent --proposes--> adapter --request--> PolicyProvider --verdict--> adapter --signs only on allow--> executor --> Solana
-                      |                    plaintext: engine                     |
-                      |                    sealed:    Arcium MXE (ciphertext)    |
-                      +----- receipt (both verdicts, chained, Ed25519) <---------+
-                                    |
-                      verifier: replay (plaintext) | attestation + on-chain record (sealed)
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.svg">
+  <img alt="An AI agent asks the GENKAI gateway for a transfer. The gateway sends the request and its ledger state to the policy provider, an Arcium MXE evaluating the encrypted policy, which records its verdict on Solana. The gateway signs a transfer only on allow and writes a signed receipt for every verdict. Anyone can verify the receipts against the records on chain." src="docs/architecture.svg" width="1000">
+</picture>
 
 - **The model may only narrow, never widen.** Enforcement is deterministic code outside the
   model. There is no prompt that unlocks a denied action.
@@ -351,7 +354,7 @@ src/cli/           genkai command line and the demo
 web/               browser verifier, @noble crypto shim, Vercel function entry
 arcium/genkai/     Arcis circuit, Anchor program, localnet test, devnet deployment
 examples/devnet/   the devnet runs (gateway, CLI, plaintext), trust anchor, policy
-scripts/           site build and preview, gateway smoke test, fixtures, devnet snapshot, sealing
+scripts/           site build and preview, gateway smoke test, fixtures, devnet snapshot, sealing, the README diagram and link-preview card
 docs/              architecture, API, MCP, operations
 ```
 
