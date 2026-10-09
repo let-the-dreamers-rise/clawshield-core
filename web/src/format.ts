@@ -31,10 +31,22 @@ function decimalsOf(request: ActionRequest): number {
   return typeof d === "number" && Number.isInteger(d) && d >= 0 && d <= 18 ? d : 0;
 }
 
+/** Tokens shown by symbol. A mint address is only that token on the cluster it was minted on. */
+const TOKEN_SYMBOLS: ReadonlyMap<string, string> = new Map([
+  ["devnet 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", "USDC"],
+  ["mainnet-beta EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "USDC"],
+]);
+
+function symbolOf(request: ActionRequest): string {
+  const asset = request.asset;
+  if (!asset) return "";
+  if (asset === NATIVE_MINT) return "SOL";
+  return TOKEN_SYMBOLS.get(`${clusterOf(request)} ${asset}`) ?? shortAddress(asset);
+}
+
 export function describeAmount(request: ActionRequest): string | undefined {
   if (request.amount === undefined) return undefined;
-  const symbol = request.asset === NATIVE_MINT ? "SOL" : request.asset ? shortAddress(request.asset) : "";
-  return [formatUnits(request.amount, decimalsOf(request)), symbol].filter((p) => p !== "").join(" ");
+  return [formatUnits(request.amount, decimalsOf(request)), symbolOf(request)].filter((p) => p !== "").join(" ");
 }
 
 /** "solana transfer 0.01 SOL to 7VHU...4BmE" */

@@ -136,7 +136,7 @@ after(() => rmSync(out, { recursive: true, force: true }));
 test("the Vercel build serves the page with its headers and the API as raw-stream functions", async () => {
   const appBytes = await buildWeb(out);
   assert.ok(appBytes > 10_000 && appBytes < 400_000, `app.js is ${appBytes} bytes`);
-  for (const file of ["index.html", "app.js", "app.js.map", "styles.css", "favicon.svg", "og.png", "deployment.json", "examples/devnet/sealed-receipts.json", "examples/devnet/gateway/receipts.json", "examples/devnet/gateway/run.json", "examples/devnet/trust.json"]) {
+  for (const file of ["index.html", "app.js", "app.js.map", "styles.css", "favicon.svg", "og.png", "deployment.json", "examples/devnet/sealed-receipts.json", "examples/devnet/gateway/receipts.json", "examples/devnet/gateway/run.json", "examples/devnet/usdc/receipts.json", "examples/devnet/usdc/run.json", "examples/devnet/usdc/trust.json", "examples/devnet/trust.json"]) {
     assert.ok(existsSync(join(out, "static", file)), file);
   }
   const site = JSON.parse(readFileSync(join(out, "config.json"), "utf8")) as { version: number; routes: { headers?: Record<string, string> }[] };

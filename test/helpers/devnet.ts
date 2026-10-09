@@ -20,6 +20,17 @@ export const PLAINTEXT_RECEIPTS = text("examples/devnet/plaintext-receipts.json"
 export const POLICY = text("examples/devnet/policy.json");
 export const MANIFEST = JSON.parse(text("arcium/genkai/deployments/devnet.json")) as Readonly<Record<string, unknown>>;
 
+/** The USDC run: its own sealed policy record, the released image, the agent on `genkai mcp`. */
+export const USDC_RECEIPTS = text("examples/devnet/usdc/receipts.json");
+export const USDC_TRUST = text("examples/devnet/usdc/trust.json");
+export const USDC_MANIFEST = JSON.parse(text("arcium/genkai/deployments/devnet-usdc.json")) as Readonly<Record<string, unknown>>;
+export const USDC_RUN = JSON.parse(text("examples/devnet/usdc/run.json")) as {
+  readonly decisions: readonly { readonly seq: number; readonly verdict: string; readonly requestId: string; readonly signature?: string; readonly finalizedSlot?: number }[];
+  readonly replay: { readonly requestId: string; readonly replayed: boolean; readonly seq: number; readonly receiptId: string };
+  readonly spendingStatus: { readonly spentInWindow: string; readonly callsInWindow: number; readonly receipts: number };
+};
+export const USDC_TRANSCRIPT = text("examples/devnet/usdc/mcp-transcript.jsonl");
+
 export interface FixtureAccount {
   readonly owner: string;
   readonly lamports: number;

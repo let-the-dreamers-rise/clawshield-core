@@ -16,11 +16,14 @@ const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
 const SAMPLES = {
   gateway: { receipts: "/examples/devnet/gateway/receipts.json", anchor: "/examples/devnet/trust.json" },
+  usdc: { receipts: "/examples/devnet/usdc/receipts.json", anchor: "/examples/devnet/usdc/trust.json" },
   sealed: { receipts: "/examples/devnet/sealed-receipts.json", anchor: "/examples/devnet/trust.json" },
   plaintext: { receipts: "/examples/devnet/plaintext-receipts.json", anchor: "/examples/devnet/policy.json" },
 } as const;
 
 type Sample = keyof typeof SAMPLES | "tamper";
+
+const isSample = (value: string | null): value is Sample => value === "tamper" || (value !== null && Object.hasOwn(SAMPLES, value));
 
 const receiptsInput = byId<HTMLTextAreaElement>("receipts-input");
 const anchorInput = byId<HTMLTextAreaElement>("anchor-input");
@@ -165,6 +168,13 @@ function showApiExample(): void {
   example.textContent = (example.textContent ?? "").replace("https://this-site", window.location.origin);
 }
 
+/** ?sample=usdc opens the page with that run verified, so one link shows one run. */
+function loadLinkedSample(): void {
+  const sample = new URLSearchParams(window.location.search).get("sample");
+  if (isSample(sample)) void loadSample(sample);
+}
+
 wireForm();
 showApiExample();
 void showDeployment();
+loadLinkedSample();

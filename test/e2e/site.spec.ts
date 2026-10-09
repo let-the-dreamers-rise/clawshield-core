@@ -5,12 +5,19 @@
  * check their own files, and do all of it on a phone.
  */
 
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { LANDED, answerDevnet } from "./devnet.ts";
 
 const EXAMPLES = join(import.meta.dirname, "..", "..", "examples", "devnet");
 const PROGRAM = "AwiVMGyi8P9mN6ig5FA74CTS6sncc7bbh8CNAxKXUERk";
+
+/** The slots a run's transfers landed in, as the snapshot of devnet recorded them. */
+function landedSlots(run: "gateway" | "usdc"): number[] {
+  const record = JSON.parse(readFileSync(join(EXAMPLES, run, "run.json"), "utf8")) as { decisions: { signature?: string }[] };
+  return record.decisions.flatMap((d) => (d.signature === undefined ? [] : [LANDED[d.signature] ?? -1]));
+}
 
 /** Console errors and failed CSP checks: a clean page has none. */
 function watchConsole(page: Page): string[] {
@@ -52,13 +59,36 @@ test("one click verifies the gateway run: five sealed decisions checked on chain
   await expect(result(page).locator(".result-summary")).toHaveText("5 sealed receipts, chain intact, every verdict matches the cluster's record on chain.");
   await expect(result(page).locator(".pill")).toHaveText(["allow", "deny", "escalate", "deny", "allow"]);
   await expect(result(page).locator(".receipt-status.ok")).toHaveCount(5);
-  for (const slot of Object.values(LANDED)) await expect(result(page)).toContainText(`landed at slot ${slot}`);
+  for (const slot of landedSlots("gateway")) await expect(result(page)).toContainText(`landed at slot ${slot}`);
   await expect(result(page)).toBeFocused();
 
   expect(calls).toContain("getSignatureStatuses");
   expect(calls.filter((m) => m === "getAccountInfo").length).toBeGreaterThanOrEqual(5);
   expect(errors).toEqual([]);
   expect([...hosts].sort()).toEqual(["127.0.0.1:8790", "api.devnet.solana.com"]);
+});
+
+test("a link opens the USDC run verified: an agent on MCP paid in USDC, under its own sealed policy", async ({ page }) => {
+  await answerDevnet(page);
+  const errors = watchConsole(page);
+  await page.goto("/?sample=usdc");
+
+  await expect(result(page).locator(".result-word")).toHaveText("Valid");
+  await expect(result(page).locator(".result-summary")).toHaveText("5 sealed receipts, chain intact, every verdict matches the cluster's record on chain.");
+  await expect(result(page).locator(".pill")).toHaveText(["allow", "deny", "escalate", "deny", "allow"]);
+  await expect(result(page)).toContainText("1.25 USDC");
+  await expect(result(page)).toContainText("2.5 USDC");
+  const slots = landedSlots("usdc");
+  expect(slots).toHaveLength(2);
+  for (const slot of slots) await expect(result(page)).toContainText(`landed at slot ${slot}`);
+  expect(errors).toEqual([]);
+});
+
+test("an unknown ?sample= is ignored", async ({ page }) => {
+  await answerDevnet(page);
+  await page.goto("/?sample=__proto__");
+  await expect(page.locator("#deployment-status")).toContainText("Confirmed on devnet just now");
+  await expect(result(page)).toBeHidden();
 });
 
 test("a denial rewritten as an approval is caught, and the page says which receipt", async ({ page }) => {

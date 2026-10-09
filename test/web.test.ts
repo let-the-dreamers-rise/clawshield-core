@@ -15,10 +15,24 @@ import { checkDeployment } from "../web/src/deployment.ts";
 import { checksFor, describeAction, explorerUrl, failureLabel, formatTime, formatUnits, shortAddress } from "../web/src/format.ts";
 import { rewriteFirstDenial, tamperNote } from "../web/src/tamper.ts";
 import { VerifyError, verifyDocuments } from "../web/src/verify.ts";
-import { ACCOUNTS, DEVNET_RPC, GATEWAY_RECEIPTS, LANDED, MANIFEST, PLAINTEXT_RECEIPTS, POLICY, SEALED_RECEIPTS, TRUST, devnetFetch } from "./helpers/devnet.ts";
+import {
+  ACCOUNTS,
+  DEVNET_RPC,
+  GATEWAY_RECEIPTS,
+  LANDED,
+  MANIFEST,
+  PLAINTEXT_RECEIPTS,
+  POLICY,
+  SEALED_RECEIPTS,
+  TRUST,
+  USDC_RECEIPTS,
+  USDC_RUN,
+  USDC_TRUST,
+  devnetFetch,
+} from "./helpers/devnet.ts";
 
-const sealed = (receipts = SEALED_RECEIPTS, fetch = devnetFetch()) =>
-  verifyDocuments({ receipts, anchor: TRUST, rpcEndpoint: DEVNET_RPC, fetch });
+const sealed = (receipts = SEALED_RECEIPTS, fetch = devnetFetch(), anchor = TRUST) =>
+  verifyDocuments({ receipts, anchor, rpcEndpoint: DEVNET_RPC, fetch });
 
 const rejectsWith = async (work: Promise<unknown>, kind: "input" | "rpc", pattern: RegExp) => {
   await assert.rejects(work, (err: unknown) => {
@@ -74,13 +88,46 @@ test("the gateway run verifies on chain, and the transfers it allowed landed", a
   assert.deepEqual(calls, [...Array(10).fill("getAccountInfo"), "getSignatureStatuses"]);
 });
 
-for (const [run, receipts] of [["CLI run", SEALED_RECEIPTS], ["gateway run", GATEWAY_RECEIPTS]] as const) {
+test("the USDC run verifies against its own policy record, and the USDC it allowed landed", async () => {
+  const calls: string[] = [];
+  const report = await sealed(USDC_RECEIPTS, devnetFetch({ landed: LANDED, calls }), USDC_TRUST);
+
+  assert.equal(report.valid, true, report.rows.flatMap((r) => r.problems).join("\n"));
+  assert.equal(report.onChain, true);
+  assert.equal(report.chained, true);
+  assert.deepEqual(report.rows.map((r) => r.verdict), ["allow", "deny", "escalate", "deny", "allow"]);
+  assert.deepEqual(report.rows.map((r) => r.action), [
+    "solana transfer 1.25 USDC to 7VHU…4BmE",
+    "solana transfer 0.5 USDC to Gsbw…QRdW",
+    "solana transfer 4 USDC to 9WzD…AWWM",
+    "solana transfer 12 USDC to 7VHU…4BmE",
+    "solana transfer 2.5 USDC to 9WzD…AWWM",
+  ]);
+  assert.deepEqual(report.rows[3]?.rules, ["mint_cap_exceeded", "amount_exceeds_window"]);
+  // The slots the run recorded are the ones the snapshot read back from devnet.
+  assert.deepEqual(
+    report.rows.map((r) => r.transactionStatus),
+    USDC_RUN.decisions.map((d) => (d.finalizedSlot === undefined ? undefined : { state: "landed", slot: d.finalizedSlot })),
+  );
+  assert.deepEqual(calls, [...Array(10).fill("getAccountInfo"), "getSignatureStatuses"]);
+
+  // The SOL deployment's anchor pins a different PolicyRecord and commitment: nothing verifies.
+  const crossed = await sealed(USDC_RECEIPTS, devnetFetch({ landed: LANDED }), TRUST);
+  assert.equal(crossed.valid, false);
+  assert.ok(crossed.failures.includes("commitment_mismatch"), crossed.failures.join(", "));
+});
+
+for (const [run, receipts, anchor] of [
+  ["CLI run", SEALED_RECEIPTS, TRUST],
+  ["gateway run", GATEWAY_RECEIPTS, TRUST],
+  ["USDC run", USDC_RECEIPTS, USDC_TRUST],
+] as const) {
   test(`rewriting a denial as an approval in the ${run} is caught by the signature, the chain and the record on chain`, async () => {
     const forged = rewriteFirstDenial(receipts);
     assert.equal(forged.index, 1);
     assert.match(tamperNote(forged.index), /^Receipt #2 /);
 
-    const report = await sealed(forged.text, devnetFetch({ landed: LANDED }));
+    const report = await sealed(forged.text, devnetFetch({ landed: LANDED }), anchor);
     assert.equal(report.valid, false);
     assert.deepEqual([...report.failures].sort(), ["attestation_invalid", "bad_signature", "chain_broken"]);
     assert.deepEqual(report.rows.map((r) => r.verdict), ["allow", "allow", "escalate", "deny", "allow"]);
@@ -174,6 +221,13 @@ test("display helpers are exact and never shape a URL from receipt content", () 
     "spl transfer 2.5 EPjF…Dt1v",
   );
   assert.equal(describeAction({ agentId: "a", tool: "noop", requestedAt: 0, params: {} }), "noop");
+  // A mint is named only on the cluster where that address is the token: Circle's USDC.
+  const pay = (asset: string, cluster: string) =>
+    describeAction({ agentId: "a", tool: "solana_transfer", amount: 1_250_000n, asset, counterparty: "7VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE", requestedAt: 0, params: { decimals: 6, cluster } });
+  assert.equal(pay("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", "devnet"), "solana transfer 1.25 USDC to 7VHU…4BmE");
+  assert.equal(pay("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "mainnet-beta"), "solana transfer 1.25 USDC to 7VHU…4BmE");
+  assert.equal(pay("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", "mainnet-beta"), "solana transfer 1.25 4zMM…ncDU to 7VHU…4BmE");
+  assert.equal(pay("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "__proto__"), "solana transfer 1.25 EPjF…Dt1v to 7VHU…4BmE");
 
   const address = "9dkMNMbZ6chVHSUyz2t3mkV7awHGce4TJcjJyUGTVjgG";
   assert.equal(explorerUrl("address", address, "devnet"), `https://explorer.solana.com/address/${address}?cluster=devnet`);

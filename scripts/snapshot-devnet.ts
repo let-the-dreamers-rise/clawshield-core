@@ -4,9 +4,9 @@
  *
  *   node --experimental-strip-types --no-warnings scripts/snapshot-devnet.ts [rpc-url]
  *
- * It reads the program and PolicyRecord the deployment manifest names, every DecisionRecord the
- * example receipts cite, and the status of every transaction they bind. All of it is public chain
- * state; nothing here holds or reads a key.
+ * It reads the program and the PolicyRecords the deployment manifests name, every DecisionRecord
+ * the example receipts cite, and the status of every transaction they bind. All of it is public
+ * chain state; nothing here holds or reads a key.
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -17,15 +17,19 @@ import { createRpcClient } from "../src/solana/rpc.ts";
 import { ROOT } from "./web-bundle.ts";
 
 const DEFAULT_RPC = "https://api.devnet.solana.com";
-const MANIFEST = "arcium/genkai/deployments/devnet.json";
-export const RECEIPT_FILES = ["examples/devnet/sealed-receipts.json", "examples/devnet/gateway/receipts.json"] as const;
+const MANIFESTS = ["arcium/genkai/deployments/devnet.json", "arcium/genkai/deployments/devnet-usdc.json"] as const;
+export const RECEIPT_FILES = [
+  "examples/devnet/sealed-receipts.json",
+  "examples/devnet/gateway/receipts.json",
+  "examples/devnet/usdc/receipts.json",
+] as const;
 const OUT = "test/fixtures/devnet-accounts.json";
 
 const read = (path: string): unknown => fromJson(readFileSync(join(ROOT, path), "utf8"));
 
 async function snapshot(endpoint: string): Promise<void> {
   const rpc = createRpcClient({ endpoint });
-  const manifest = read(MANIFEST) as { readonly programId: string; readonly policy: string };
+  const manifests = MANIFESTS.map((file) => read(file) as { readonly programId: string; readonly policy: string });
   const receipts = RECEIPT_FILES.flatMap((file) =>
     (read(file) as readonly unknown[]).map((receipt, i) => parseSignedReceipt(receipt, `${file}[${i}]`)),
   );
@@ -33,7 +37,7 @@ async function snapshot(endpoint: string): Promise<void> {
   const decisions = receipts.flatMap((r) => (r.body.attestation?.kind === "onchain" ? [r.body.attestation.decision] : []));
   const accounts = Object.fromEntries(
     await Promise.all(
-      [manifest.programId, manifest.policy, ...decisions].map(async (address) => {
+      [...new Set([...manifests.flatMap((m) => [m.programId, m.policy]), ...decisions])].map(async (address) => {
         const info = await rpc.getAccountInfo(address);
         if (!info) throw new Error(`${address} does not exist on ${endpoint}`);
         const data = Buffer.from(info.data).toString("base64");

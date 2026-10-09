@@ -1,0 +1,100 @@
+{
+  "note": "A sealed gateway run on devnet paying USDC: the released container image in broadcast mode, one agent making its payments through genkai mcp, five proposals and one retry. decisionMs is the agent's full tools/call round trip, the Arcium MPC evaluation included. Public facts only; the receipts are in receipts.json and verify against trust.json, the agent's session is in mcp-transcript.jsonl.",
+  "image": "ghcr.io/let-the-dreamers-rise/genkai-gateway@sha256:f89e678c2f44370b1213305bcd4851a8a81f2b7bc810915c563f669240e9cd09",
+  "cluster": "devnet",
+  "mode": "sealed",
+  "execution": "broadcast",
+  "agent": {
+    "id": "desk-alpha",
+    "client": "genkai mcp"
+  },
+  "token": {
+    "symbol": "USDC",
+    "mint": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+    "decimals": 6
+  },
+  "vault": "8E7TALxDV2PFttv3e61B3paPsXdiTE8Hm8b7ivq4cag7",
+  "vaultTokenAccount": "GembeTsGPR8z3yuj9WCrhvPqWUydzpfVyPJJYwGRRWuj",
+  "operatorPublicKey": "MCowBQYDK2VwAyEAa12nOjSlJ1n3qo+mf6rksel6BkWXrds8L+7XN92/Mug=",
+  "funding": {
+    "sol": "5PiRyeJZUkqoQSmRzUoq286LPzPNorxxq5jWRJ64QmdVrm24qySS45tnhP5v9HsicdT9Xx9LRdJNr7PXLjLgoR69",
+    "usdc": "2Wk1FNnCnVGdKFBxJhRmdfSEBnebQBaSLUU3vpF6c1mqiDa4g2kG4HtGa7bJ5ZnYtK4j5RHG1tGtEjrKGgKQjECr"
+  },
+  "decisions": [
+    {
+      "seq": 1,
+      "requestId": "inv-a-1042",
+      "amount": "1.25",
+      "to": "7VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE",
+      "verdict": "allow",
+      "rules": [
+        "all_checks_passed"
+      ],
+      "decisionMs": 7767,
+      "signature": "3gJkMZdqaP8RsKBEED9vuqztHnjMvUm49DcbxWJuGrNxnDdVqe3Hy711ufnfYEMAGd8ypDYz7LfayLSeR5uQZXSr",
+      "finalizedSlot": 509256727
+    },
+    {
+      "seq": 2,
+      "requestId": "tip-chat-881",
+      "amount": "0.5",
+      "to": "GsbwXfJraMomNxBcjYLcG3mxkBUiyWXAB32fGbSMQRdW",
+      "verdict": "deny",
+      "rules": [
+        "counterparty_not_allowed"
+      ],
+      "decisionMs": 5260
+    },
+    {
+      "seq": 3,
+      "requestId": "prepay-b-q4",
+      "amount": "4",
+      "to": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+      "verdict": "escalate",
+      "rules": [
+        "human_approval_required"
+      ],
+      "decisionMs": 5163
+    },
+    {
+      "seq": 4,
+      "requestId": "renewal-a-2027",
+      "amount": "12",
+      "to": "7VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE",
+      "verdict": "deny",
+      "rules": [
+        "mint_cap_exceeded",
+        "amount_exceeds_window"
+      ],
+      "decisionMs": 5133
+    },
+    {
+      "seq": 5,
+      "requestId": "inv-b-2201",
+      "amount": "2.5",
+      "to": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+      "verdict": "allow",
+      "rules": [
+        "all_checks_passed"
+      ],
+      "decisionMs": 5890,
+      "signature": "4VfRF8bRzjNupn72nmQQhYH7ejcZ45JdSEdtfMdBJ8BWV2gfvk2SuiB4cAkvxqDWwiYCY7Ad7LFMBAX5gRYNzqvi",
+      "finalizedSlot": 509256817
+    }
+  ],
+  "replay": {
+    "requestId": "inv-a-1042",
+    "replayed": true,
+    "seq": 1,
+    "receiptId": "8ef9a90209936c1ec84cab97f82d5e8f",
+    "decisionMs": 15
+  },
+  "spendingStatus": {
+    "agent": "desk-alpha",
+    "revoked": false,
+    "spentInWindow": "3750000",
+    "callsInWindow": 5,
+    "windowStartedAt": "2026-10-09T17:38:26.159Z",
+    "receipts": 5
+  }
+}
