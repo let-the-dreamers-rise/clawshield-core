@@ -5,10 +5,11 @@
  * until it has been validated: blockhashes must decode to 32 bytes, signatures to 64, numbers
  * must be numbers. A malformed response is an error, never a default.
  *
- * Retries cover transport failures only (network errors, timeouts, 429 and 5xx). A JSON-RPC
- * error is the server's answer, and retrying it would only hide it. Retrying sendTransaction
- * is safe because a transaction is identified by its signature: the cluster will not execute
- * the same signed bytes twice.
+ * Retries cover transport failures only (network errors, timeouts, 429 and 5xx), waiting as
+ * long as a rate limiter's Retry-After asks, within a cap. A JSON-RPC error is the server's
+ * answer, and retrying it would only hide it. Retrying sendTransaction is safe because a
+ * transaction is identified by its signature: the cluster will not execute the same signed
+ * bytes twice.
  */
 
 import { decodeBase58, decodePubkey, encodeBase58 } from "./base58.ts";
@@ -110,6 +111,16 @@ function base64Data(v: unknown, what: string): Uint8Array {
   return new Uint8Array(Buffer.from(v[0], "base64"));
 }
 
+/** The longest a Retry-After is honoured: a server cannot park its caller for longer. */
+const MAX_RETRY_AFTER_MS = 10_000;
+
+/** Retry-After in delta-seconds, the form rate limiters send. Any other form is ignored. */
+function retryAfterMs(res: Response): number | undefined {
+  const raw = res.headers.get("retry-after")?.trim();
+  if (raw === undefined || !/^\d{1,6}$/.test(raw)) return undefined;
+  return Math.min(Number(raw) * 1000, MAX_RETRY_AFTER_MS);
+}
+
 function commitmentOf(v: unknown): Commitment | null {
   if (v === null || v === undefined) return null;
   if (v === "processed" || v === "confirmed" || v === "finalized") return v;
@@ -134,7 +145,7 @@ export function createRpcClient(config: RpcConfig): RpcClient {
   const sleep = config.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   let nextId = 1;
 
-  async function attempt(body: string): Promise<{ retryable: boolean; json?: unknown; error?: string }> {
+  async function attempt(body: string): Promise<{ retryable: boolean; json?: unknown; error?: string; retryAfterMs?: number }> {
     try {
       const res = await doFetch(url.toString(), {
         method: "POST",
@@ -142,7 +153,7 @@ export function createRpcClient(config: RpcConfig): RpcClient {
         body,
         signal: AbortSignal.timeout(timeoutMs),
       });
-      if (res.status === 429 || res.status >= 500) return { retryable: true, error: `HTTP ${res.status}` };
+      if (res.status === 429 || res.status >= 500) return { retryable: true, error: `HTTP ${res.status}`, retryAfterMs: retryAfterMs(res) };
       if (res.status !== 200) return { retryable: false, error: `HTTP ${res.status}` };
       return { retryable: false, json: await res.json() };
     } catch (err) {
@@ -155,11 +166,13 @@ export function createRpcClient(config: RpcConfig): RpcClient {
     const body = JSON.stringify({ jsonrpc: "2.0", id, method, params });
 
     let last = "no attempt made";
+    let asked = 0;
     for (let n = 0; n <= retries; n++) {
-      if (n > 0) await sleep(backoffMs * 2 ** (n - 1));
+      if (n > 0) await sleep(Math.max(backoffMs * 2 ** (n - 1), asked));
       const result = await attempt(body);
       if (result.json === undefined) {
         last = result.error ?? last;
+        asked = result.retryAfterMs ?? 0;
         if (result.retryable) continue;
         break;
       }
@@ -241,6 +254,28 @@ export function createRpcClient(config: RpcConfig): RpcClient {
         data: base64Data(value["data"], "data"),
         executable: value["executable"] === true,
       };
+    },
+  });
+}
+
+/**
+ * The same client, reading each account at most once. Every receipt of a run points at the same
+ * PolicyRecord, so a verification reads it once instead of once per receipt, which keeps a run
+ * inside a public endpoint's rate limit. A read in flight is shared, and a failed read is
+ * forgotten so it can be tried again. The memo lives as long as the wrapper: wrap per
+ * verification, so each one reads the chain as it is then.
+ */
+export function withAccountMemo(rpc: RpcClient): RpcClient {
+  const reads = new Map<string, Promise<AccountInfo | null>>();
+  return Object.freeze({
+    ...rpc,
+    getAccountInfo(address: string): Promise<AccountInfo | null> {
+      const known = reads.get(address);
+      if (known !== undefined) return known;
+      const read = rpc.getAccountInfo(address);
+      reads.set(address, read);
+      read.catch(() => reads.delete(address));
+      return read;
     },
   });
 }

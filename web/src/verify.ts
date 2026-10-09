@@ -99,10 +99,15 @@ function anchorField(value: unknown): { readonly policy: unknown } | { readonly 
   return Object.hasOwn(value, "commitment") ? { trust: value } : { policy: value };
 }
 
+/**
+ * The public devnet endpoint limits each address per ten seconds, and a visitor clicking through
+ * the samples can reach that. Backing off 1, 2 and 4 seconds rides out the window, where a
+ * quicker retry would report the chain unreachable.
+ */
 function rpcOf(endpoint: string | undefined, fetch: FetchLike | undefined): RpcClient | undefined {
   if (endpoint === undefined || endpoint.trim() === "") return undefined;
   try {
-    return createRpcClient({ endpoint: endpoint.trim(), fetch, retries: 2, timeoutMs: 20_000 });
+    return createRpcClient({ endpoint: endpoint.trim(), fetch, retries: 3, backoffMs: 1_000, timeoutMs: 20_000 });
   } catch (err) {
     throw new VerifyError("input", err instanceof Error ? err.message : String(err));
   }

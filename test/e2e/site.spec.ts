@@ -149,7 +149,8 @@ test("an unreachable chain is reported as such, not as a forgery", async ({ page
   await page.goto("/");
   await expect(page.locator("#deployment-status")).toContainText("Could not read devnet");
   await page.getByRole("button", { name: "Verify the devnet run" }).click();
-  await expect(result(page).locator(".result-word")).toHaveText("Chain unreachable");
+  // Retries back off 1, 2 and 4 s before the page gives up on the endpoint.
+  await expect(result(page).locator(".result-word")).toHaveText("Chain unreachable", { timeout: 20_000 });
   await expect(result(page)).toContainText("Nothing was judged invalid");
 });
 

@@ -21,14 +21,14 @@ import {
   verifySealedReceiptOnChain,
   type SealedTrust,
 } from "../receipt/verify-sealed.ts";
-import type { RpcClient } from "../solana/rpc.ts";
+import { withAccountMemo, type RpcClient } from "../solana/rpc.ts";
 import { SchemaError, parsePolicy, parseSealedTrust, parseSignedReceipt } from "../io/schema.ts";
 import { array, opt, record, hex64 } from "../io/validate.ts";
 import type { Policy } from "../policy/types.ts";
 import type { VerificationResult } from "../receipt/types.ts";
 
 export const MAX_CHAIN_LENGTH = 1_000;
-/** Each on-chain receipt costs two RPC reads, so a chain checked on chain is capped lower. */
+/** Each on-chain receipt costs an RPC read, plus one for the PolicyRecord they share, so a chain checked on chain is capped lower. */
 export const MAX_ONCHAIN_CHAIN_LENGTH = 100;
 
 /**
@@ -87,7 +87,7 @@ export async function handleVerifyChain(body: unknown, ctx: HandlerContext = {})
     if (receipts.length > MAX_ONCHAIN_CHAIN_LENGTH) {
       throw new SchemaError("receipts", `at most ${MAX_ONCHAIN_CHAIN_LENGTH} receipts when checking on chain`);
     }
-    return { mode: "sealed", ...(await verifySealedChainOnChain(receipts, anchor.trust, ctx.rpc)) };
+    return { mode: "sealed", ...(await verifySealedChainOnChain(receipts, anchor.trust, withAccountMemo(ctx.rpc))) };
   }
   return { mode: "sealed", ...verifySealedChain(receipts, anchor.trust) };
 }

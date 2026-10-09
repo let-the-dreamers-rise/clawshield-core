@@ -64,8 +64,8 @@ test("the devnet run verifies against the cluster's records on chain", async () 
   // Signed and bound, never broadcast: the page must say so rather than link to nothing.
   assert.deepEqual(first?.transactionStatus, { state: "not_found" });
   assert.equal(report.rows[1]?.transactionSignature, undefined);
-  // Two reads per receipt (decision record, policy record), then one batched status call.
-  assert.deepEqual(calls, [...Array(10).fill("getAccountInfo"), "getSignatureStatuses"]);
+  // One read per DecisionRecord, one for the PolicyRecord they share, then one batched status call.
+  assert.deepEqual(calls, [...Array(6).fill("getAccountInfo"), "getSignatureStatuses"]);
 });
 
 test("the gateway run verifies on chain, and the transfers it allowed landed", async () => {
@@ -85,7 +85,7 @@ test("the gateway run verifies on chain, and the transfers it allowed landed", a
     undefined,
     { state: "landed", slot: 506503976 },
   ]);
-  assert.deepEqual(calls, [...Array(10).fill("getAccountInfo"), "getSignatureStatuses"]);
+  assert.deepEqual(calls, [...Array(6).fill("getAccountInfo"), "getSignatureStatuses"]);
 });
 
 test("the USDC run verifies against its own policy record, and the USDC it allowed landed", async () => {
@@ -109,7 +109,7 @@ test("the USDC run verifies against its own policy record, and the USDC it allow
     report.rows.map((r) => r.transactionStatus),
     USDC_RUN.decisions.map((d) => (d.finalizedSlot === undefined ? undefined : { state: "landed", slot: d.finalizedSlot })),
   );
-  assert.deepEqual(calls, [...Array(10).fill("getAccountInfo"), "getSignatureStatuses"]);
+  assert.deepEqual(calls, [...Array(6).fill("getAccountInfo"), "getSignatureStatuses"]);
 
   // The SOL deployment's anchor pins a different PolicyRecord and commitment: nothing verifies.
   const crossed = await sealed(USDC_RECEIPTS, devnetFetch({ landed: LANDED }), TRUST);

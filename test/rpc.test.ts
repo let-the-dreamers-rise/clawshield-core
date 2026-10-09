@@ -8,7 +8,7 @@
 
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { createRpcClient, RpcError, type FetchLike } from "../src/solana/rpc.ts";
+import { createRpcClient, RpcError, withAccountMemo, type FetchLike, type RpcClient } from "../src/solana/rpc.ts";
 
 const BLOCKHASH = "EkSnNWid2cvwEVnVx9aBqawnmiCNiDgp3gUdkDPTKN1N";
 const SIG = "4iNuB2HPT5ERfgA87NU5W4u32WGqcEkVJF7ZqVj99jYv1TZtvG6De8FpdE3urkw6ERvhwrRMT18he4yv3yLCbULA";
@@ -63,6 +63,60 @@ test("transport failures are retried, then reported", async () => {
     (err: unknown) => err instanceof RpcError && err.code === "transport",
   );
   assert.equal(down.calls.length, 3, "one attempt plus two retries");
+});
+
+test("a rate limit's Retry-After is honoured up to a cap; without one the backoff doubles", async () => {
+  const ok = { result: { context: { slot: 1 }, value: { blockhash: BLOCKHASH, lastValidBlockHeight: 9 } } };
+  const waitsFor = async (retryAfter: string | undefined): Promise<number[]> => {
+    const waits: number[] = [];
+    let n = 0;
+    const fetch: FetchLike = async (_url, init) => {
+      const { id } = JSON.parse(init.body) as { id: number };
+      if (n++ < 2) return new Response("slow down", { status: 429, headers: retryAfter === undefined ? {} : { "retry-after": retryAfter } });
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id, ...ok }), { status: 200 });
+    };
+    const rpc = createRpcClient({ endpoint: "https://rpc.invalid", fetch, retries: 3, backoffMs: 100, sleep: async (ms) => void waits.push(ms) });
+    assert.equal((await rpc.getLatestBlockhash()).lastValidBlockHeight, 9);
+    return waits;
+  };
+  assert.deepEqual(await waitsFor("3"), [3_000, 3_000]);
+  assert.deepEqual(await waitsFor("3600"), [10_000, 10_000], "a server cannot stall the caller for an hour");
+  assert.deepEqual(await waitsFor(undefined), [100, 200]);
+  assert.deepEqual(await waitsFor("soon"), [100, 200], "an unreadable header falls back to the backoff");
+});
+
+test("withAccountMemo reads each account once, shares a read in flight, and forgets a failed one", async () => {
+  const reads: string[] = [];
+  let flaky = true;
+  const base: RpcClient = {
+    getLatestBlockhash: async () => ({ blockhash: BLOCKHASH, lastValidBlockHeight: 1 }),
+    getBlockHeight: async () => 42,
+    sendTransaction: async () => SIG,
+    getSignatureStatuses: async (signatures) => signatures.map(() => null),
+    getTransaction: async () => null,
+    getAccountInfo: async (address) => {
+      reads.push(address);
+      if (address === "flaky" && flaky) {
+        flaky = false;
+        throw new RpcError("transport", "getAccountInfo failed after 3 attempt(s): HTTP 429");
+      }
+      return address === "missing" ? null : { owner: address, lamports: 1n, data: new Uint8Array(), executable: false };
+    },
+  };
+  const rpc = withAccountMemo(base);
+
+  const [first, second] = await Promise.all([rpc.getAccountInfo("policy"), rpc.getAccountInfo("policy")]);
+  assert.equal(first, second);
+  await rpc.getAccountInfo("policy");
+  assert.equal(await rpc.getAccountInfo("missing"), null);
+  await rpc.getAccountInfo("missing");
+  await assert.rejects(rpc.getAccountInfo("flaky"), RpcError);
+  assert.equal((await rpc.getAccountInfo("flaky"))?.owner, "flaky", "a failed read is tried again");
+  assert.deepEqual(reads, ["policy", "missing", "flaky", "flaky"]);
+
+  assert.equal(await rpc.getBlockHeight(), 42, "everything else passes straight through");
+  await withAccountMemo(base).getAccountInfo("policy");
+  assert.equal(reads.filter((r) => r === "policy").length, 2, "a new memo reads afresh");
 });
 
 test("a JSON-RPC error is surfaced and not retried", async () => {

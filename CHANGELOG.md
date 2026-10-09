@@ -18,6 +18,13 @@ version may change the HTTP API, the receipt format or the CLI; each such change
 - `scripts/snapshot-devnet.ts` reads every deployment manifest, so the offline tests cover both
   PolicyRecords.
 
+### Fixed
+
+- Verifying a run on chain reads each account once, not the shared PolicyRecord once per
+  receipt, and the RPC client waits as long as a rate limiter's `Retry-After` asks, up to 10 s.
+  On the public devnet endpoint, a visitor clicking quickly through the site's samples could
+  be told the chain was unreachable; eight verifications back to back now all complete.
+
 ## [0.1.0] - 2026-10-04
 
 The first release: spending policies for AI agents on Solana, evaluated encrypted by an Arcium
