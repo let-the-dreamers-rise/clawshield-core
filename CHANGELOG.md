@@ -4,6 +4,20 @@ Notable changes to GENKAI. The format follows [Keep a Changelog](https://keepach
 and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Until 1.0, a minor
 version may change the HTTP API, the receipt format or the CLI; each such change will be listed.
 
+## [Unreleased]
+
+### Added
+
+- A USDC run on devnet, in `examples/devnet/usdc`: an agent paying Circle's devnet USDC through
+  `genkai mcp`, against the released 0.1.0 image, under its own sealed PolicyRecord. Both allowed
+  payments landed, and a retry under the same `request_id` returned the recorded decision and
+  paid nothing. The agent's whole MCP session is committed beside the receipts, and a test checks
+  the receipts, the run record, the session and the published policy against one another.
+- The verifier site names tokens it knows on the cluster they belong to (USDC on devnet and
+  mainnet-beta), has a USDC sample, and opens any sample from a link: `/?sample=usdc`.
+- `scripts/snapshot-devnet.ts` reads every deployment manifest, so the offline tests cover both
+  PolicyRecords.
+
 ## [0.1.0] - 2026-10-04
 
 The first release: spending policies for AI agents on Solana, evaluated encrypted by an Arcium
@@ -75,4 +89,5 @@ MPC cluster, with a receipt for every decision that anyone can verify. Live on d
 - 212 tests at 97% line coverage, browser tests at desktop and phone size, CodeQL, and CI on
   Node 22 and 24. Zero runtime dependencies.
 
+[Unreleased]: https://github.com/let-the-dreamers-rise/clawshield-core/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/let-the-dreamers-rise/clawshield-core/releases/tag/v0.1.0

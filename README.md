@@ -21,7 +21,7 @@ because a supply-chain compromise anywhere on the path from decision to signatur
 invalidate every receipt ever issued.
 
 ```
-212 tests  |  97% line coverage  |  0 runtime dependencies  |  tsc --strict clean
+219 tests  |  97% line coverage  |  0 runtime dependencies  |  tsc --strict clean
 ```
 
 ## Live on Solana devnet
@@ -43,6 +43,7 @@ The gateway ran from its published container image (digest in
 | Arcium cluster | offset 456, circuit `genkai.policy.v2` |
 | Decisions by the cluster | [allow](https://explorer.solana.com/address/892E1Gutdd3fk248aoKYTMvGfairBjToUumNV2onBk84?cluster=devnet), [deny](https://explorer.solana.com/address/51nFcVZxuTYwAMWgYWHwt23kGm2aRW7ELaj2ZN3aJqiT?cluster=devnet), [escalate](https://explorer.solana.com/address/8nQjNiQJ3xBPGRKaRPLqn9p39W1zbMSKeQEXxxdno9Bf?cluster=devnet), [deny](https://explorer.solana.com/address/J88FDgrZGTh6UXbKG27zWTy47n6N78YK7ob9gVof6Lo1?cluster=devnet), [allow](https://explorer.solana.com/address/UU6Jz4ytWnZw81Um4uxxfiUPZgZFhNhJrzaugcX9Xj7?cluster=devnet) |
 | Transfers that landed | [0.01 SOL](https://explorer.solana.com/tx/5axning5vhZ6PTx7Nhw3WyPpBAYjPgNQetaCT7Fq5D9kdW2xTspMMpxvQ8sEj47uGYFrGH5ANWyHEhqJW5oYU3wc?cluster=devnet), [0.015 SOL](https://explorer.solana.com/tx/2NJoEc4CmAy5MyDWkFmwigVZ7hWKPUCZFspYHazhb18SC7A2QNwFA7m414zVwYsma7GSpghBSznfJPtH3NouULgA?cluster=devnet), each with the receipt id in its memo |
+| USDC run, through MCP | PolicyRecord [`3iBdFt2rSE66nJhpagxniYZrYLbPXcF5QyT3rcUtVEYo`](https://explorer.solana.com/address/3iBdFt2rSE66nJhpagxniYZrYLbPXcF5QyT3rcUtVEYo?cluster=devnet); landed [1.25 USDC](https://explorer.solana.com/tx/3gJkMZdqaP8RsKBEED9vuqztHnjMvUm49DcbxWJuGrNxnDdVqe3Hy711ufnfYEMAGd8ypDYz7LfayLSeR5uQZXSr?cluster=devnet), [2.5 USDC](https://explorer.solana.com/tx/4VfRF8bRzjNupn72nmQQhYH7ejcZ45JdSEdtfMdBJ8BWV2gfvk2SuiB4cAkvxqDWwiYCY7Ad7LFMBAX5gRYNzqvi?cluster=devnet) |
 | Hosted verification API | `POST https://genkai-inky.vercel.app/v1/chains/verify` ([docs/API.md](docs/API.md)) |
 
 From a clone, the same check runs from files and RPC alone:
@@ -52,6 +53,14 @@ npm run genkai -- verify-chain examples/devnet/gateway/receipts.json \
   --trust examples/devnet/trust.json --rpc https://api.devnet.solana.com
 # VALID (sealed)
 ```
+
+**Paid in USDC, by an agent on MCP.** A second run,
+[examples/devnet/usdc](examples/devnet/usdc), pays Circle's devnet USDC under its own sealed
+PolicyRecord, from the released 0.1.0 image. The agent spoke only through `genkai mcp`, and its
+whole session is committed beside the receipts: both allowed payments landed, the refusals and
+the escalation came back worded so a model acts on them, and a retry of the first payment under
+the same `request_id` returned the recorded decision without paying again.
+[Verify it in one click](https://genkai-inky.vercel.app/?sample=usdc).
 
 `examples/devnet/` also holds an earlier run of the same five requests through the CLI, whose
 transfers were signed but never broadcast, and the same requests decided in plaintext, with the
@@ -353,7 +362,7 @@ src/mcp/           MCP server: protocol, stdio transport, gateway client, the ag
 src/cli/           genkai command line and the demo
 web/               browser verifier, @noble crypto shim, Vercel function entry
 arcium/genkai/     Arcis circuit, Anchor program, localnet test, devnet deployment
-examples/devnet/   the devnet runs (gateway, CLI, plaintext), trust anchor, policy
+examples/devnet/   the devnet runs (gateway, USDC through MCP, CLI, plaintext), trust anchors, policies
 scripts/           site build and preview, gateway smoke test, fixtures, devnet snapshot, sealing, the README diagram and link-preview card
 docs/              architecture, API, MCP, operations
 ```
@@ -369,7 +378,8 @@ by Arcium cluster 456**; the live `MxeClient`, with receipts that name their Dec
 on-chain verification in the library, the CLI, the hosted API and the browser; **the
 authenticated gateway with its SQLite ledger, shipped as a container image and run from it on
 devnet, sealed and broadcasting, with both allowed transfers finalized**; idempotent retries;
-**`genkai mcp`, the gateway as tools for any MCP client**; **the public verifier site and API
+**`genkai mcp`, the gateway as tools for any MCP client**, **and a USDC run on devnet made
+through it**; **the public verifier site and API
 on Vercel**; CI on Node 22 and 24, and an image pipeline that smoke-tests before it publishes.
 
 Next:
@@ -377,7 +387,9 @@ Next:
 - Make the program immutable after an external review, so the circuit pinned in its computation
   definition cannot be swapped by an upgrade (`solana program set-upgrade-authority --final`;
   irreversible, so it is deliberately not automated)
-- Mainnet-beta, once Arcium's mainnet clusters are open to this program
+- Mainnet-beta, on Arcium's mainnet cluster (offset 2026). Arcium documents the same deploy flow
+  as devnet; the cost is mostly the 485 KB program's rent, about 2.47 SOL, which comes back if
+  the program is ever closed
 - Circle Developer Controlled Wallets and ERC-4337 adapters
 - An approval flow for escalations, so a person can release an escalated payment through the
   gateway instead of making it by hand

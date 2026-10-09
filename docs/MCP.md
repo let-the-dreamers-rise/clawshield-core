@@ -12,6 +12,10 @@ model --tools/call--> genkai mcp --HTTPS + agent key--> gateway --> policy (plai
                                      receipt, ledger, signed transaction (broadcast if configured)
 ```
 
+Seen live: in [examples/devnet/usdc](../examples/devnet/usdc) an agent pays devnet USDC through
+`genkai mcp` under a sealed policy decided by an Arcium cluster, and its whole session is in
+`mcp-transcript.jsonl`, next to the receipts it produced.
+
 ## Set it up
 
 **1. An agent and its key.** With an admin key for the gateway (see
