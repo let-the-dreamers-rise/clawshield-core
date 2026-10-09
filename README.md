@@ -21,7 +21,7 @@ because a supply-chain compromise anywhere on the path from decision to signatur
 invalidate every receipt ever issued.
 
 ```
-219 tests  |  97% line coverage  |  0 runtime dependencies  |  tsc --strict clean
+221 tests  |  97% line coverage  |  0 runtime dependencies  |  tsc --strict clean
 ```
 
 ## Live on Solana devnet
