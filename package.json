@@ -29,7 +29,7 @@
   "devDependencies": {
     "@noble/curves": "2.4.0",
     "@noble/hashes": "2.4.0",
-    "@playwright/test": "1.63.0",
+    "@playwright/test": "1.64.1",
     "@types/node": "^22.0.0",
     "buffer": "6.0.3",
     "esbuild": "0.28.2",
